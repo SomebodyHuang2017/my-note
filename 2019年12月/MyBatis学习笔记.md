@@ -3,11 +3,13 @@
 ## MyBatis核心类
 * **SqlSessionFactory：** 每个基于MyBatis的应用都是以一个SqlSessionFactory的实例为中心的。SqlSessionFactory的实例可以通过SqlSessionFactoryBuilder获得。而SqlSessionFactoryBuilder则可以通过XML或者通过java的方式构建出SqlSessionFactory的实例。SqlSessionFactory一旦创建就应该在应用的运行期间一直存在，建议使用单例模式或者静态单例模式。一个SqlSessionFactory对应配置文件中的一个环境（enviroment），如果你要使用多个数据库就配置多个环境分别对应一个SqlSession。
 * **SqlSession：** SqlSession是一个接口，它有2个实现类，分别是DefaultSqlSession和SqlSessionManager。SqlSession通过内部放置的执行期（Executor）来对数据进行CURD。此外SqlSession是线程不安全的，因为每一次操作完数据库后都要调用close对其进行关闭，官方建议通过try-finally来保证总是关闭SqlSession。
-* **Executor：** Executor 执行器有两个实现类，其中BaseExecutor有三个继承类分别是BatchExecutor（重用语句并执行批量更新），ReuseExecutor（重用预处理语句prepared statements）,SimpleExecutor（普通的执行器）。以上就是主要的Executor。通过下图可以看到MyBatis在Executor的设计上面使用了装饰者模式，我们可以用CachingExecutor来装饰前面的三个执行器的目的就是用来实现缓存。![ExecutorUML](http://127.0.0.1/Desktop/ExecutorUML.jpg)
+* **Executor：** Executor 执行器有两个实现类，其中BaseExecutor有三个继承类分别是BatchExecutor（重用语句并执行批量更新），ReuseExecutor（重用预处理语句prepared statements）,SimpleExecutor（普通的执行器）。以上就是主要的Executor。通过下图可以看到MyBatis在Executor的设计上面使用了装饰者模式，我们可以用CachingExecutor来装饰前面的三个执行器的目的就是用来实现缓存。![ExecutorUML](./pic/ExecutorUML.png)
 * **MappedStatement：** MappedStatement就是用来存放我们SQL映射文件的信息包括sql语句，输入参数，输出参数等等。一个SQL节点对应一个MappedStatement对象。
 
 ## MyBatis工作流程
-`SqlSessionFactoryBuilder -> SqlSessionFactory -> SqlSession -> Configuration -> MapperRegistry -> mapperProxyFactory -> Proxy -> Mapper$Proxy -> MapperProxy -> DB`
+MyBatis的工作流程：`SqlSessionFactoryBuilder -> SqlSessionFactory -> SqlSession -> Configuration -> MapperRegistry -> mapperProxyFactory -> Proxy -> Mapper$Proxy -> MapperProxy -> DB`
+![MyBatis执行流程](./pic/MyBatis执行流程.png)
+
 1. 通过SqlSessionFactoryBuilder创建SqlSessionFactory
 首先在SqlSessionFactoryBuilder中的build方法使用了一个叫做XMLConfigBuilder来解析mybatis-config.xml。针对配置文件的每一个节点进行解析并将数据存放到Configuration这个对象中，紧接着使用带有方法入参是Configuration的build方法创建DefaultSqlSessionFactory。
 ```java
