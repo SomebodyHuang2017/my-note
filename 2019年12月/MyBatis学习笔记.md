@@ -365,10 +365,67 @@ public class MapperMethod {
     }
     return result;
   }
+  
+  private <E> Object executeForMany(SqlSession sqlSession, Object[] args) {
+      Object param = this.method.convertArgsToSqlCommandParam(args);
+      List result;
+      if (this.method.hasRowBounds()) {
+          RowBounds rowBounds = this.method.extractRowBounds(args);
+          // 使用sqlSession对象去运行对象的sql
+          result = sqlSession.selectList(this.command.getName(), param, rowBounds);
+      } else {
+          result = sqlSession.selectList(this.command.getName(), param);
+      }
+
+      if (!this.method.getReturnType().isAssignableFrom(result.getClass())) {
+          return this.method.getReturnType().isArray() ? this.convertToArray(result) : this.convertToDeclaredCollection(sqlSession.getConfiguration(), result);
+      } else {
+          return result;
+      }
+  }
 }
 
+```
+现在应该知道为什么只需要定义Mapper接口就可以运行SQL了，通过动态代理技术，让这个接口跑起来，而后采用命令模式，最后使用SqlSession接口的方法使得它能够执行查询。
 
+## SqlSession下的四大对象
+SqlSession下有四大对象，分别是：Executor、StatementHandler、ParameterHandler、ResultHandler
+1. Executor 代表执行器，由他来调度 StatementHandler、ParameterHandler、ResultHandler等来执行对应的SQL
+2. StatementHandler 的作用是使用数据库的Statement (PreparedStatement) 执行操作，它是四大对象的核心，起到乘上启下的作用。
+3. ParameterHandler 用于 SQL 对参数的处理
+4. ResultHandler 是进行最后数据集（ResultSet）的封装返回处理的。
+
+```java
+public class Configuration {
+    // ...
+    
+    // 创建执行器
+    public Executor newExecutor(Transaction transaction, ExecutorType executorType) {
+        executorType = executorType == null ? this.defaultExecutorType : executorType;
+        executorType = executorType == null ? ExecutorType.SIMPLE : executorType;
+        Object executor;
+        if (ExecutorType.BATCH == executorType) {
+            executor = new BatchExecutor(this, transaction);
+        } else if (ExecutorType.REUSE == executorType) {
+            executor = new ReuseExecutor(this, transaction);
+        } else {
+            // 默认是使用SimpleExecutor
+            executor = new SimpleExecutor(this, transaction);
+        }
+
+        // 装饰器模式，CachingExecutor
+        if (this.cacheEnabled) {
+            executor = new CachingExecutor((Executor)executor);
+        }
+
+        // 拦截器链加入执行器 
+        Executor executor = (Executor)this.interceptorChain.pluginAll(executor);
+        return executor;
+    }
+}
 ```
 
-> https://blog.csdn.net/u010890358/article/details/80665753
+> MyBatis源码  
+> [Mybatis工作流程及其原理与解析](https://blog.csdn.net/u010890358/article/details/80665753)  
+> 《深入浅出MyBatis技术原理及实战》
 
