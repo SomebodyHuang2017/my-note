@@ -147,6 +147,10 @@ Sentinel 将 ProcessorSlot 作为 SPI 接口进行扩展（1.7.2 版本以前 Sl
 7. FlowSlot 流量控制
 8. DegradeSlot 熔断降级
 
+### Slot 链何时创建？
+CtSph 获取 entry 时会调用 `lookProcessChain` 方法创建 slot 链，一个 resource 对应一条 slot 链。
+
+
 
 
 
