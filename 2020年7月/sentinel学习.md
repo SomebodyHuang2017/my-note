@@ -151,15 +151,253 @@ Sentinel 将 ProcessorSlot 作为 SPI 接口进行扩展（1.7.2 版本以前 Sl
 CtSph 获取 entry 时会调用 `lookProcessChain` 方法创建 slot 链，一个 resource 对应一条 slot 链。
 
 ### Sentinel 的基本组件
-Context
-ContextUtil
-Entry
-Node
-    - StatisticNode
-        - DefaultNode
-            - EntranceNode
-        - ClusterNode
-SlotChain
+* Context
+* ContextUtil
+* Entry
+* Node
+    * StatisticNode
+        * DefaultNode
+            * EntranceNode
+        * ClusterNode
+* SlotChain
+
+### 程序的入口
+我们了解一个组件，需要有特定的思路，通常都是从整体架构开始看，再从入口逐步去了解每个模块。现在我们来探究 Sentinel 作为一个 SDK，它从哪里开始工作的。
+
+#### Env —— Sentinel 初始化之源
+Env类代码很简单，只有几行。初始化的源头就是从 `InitExecutor.doInit` 开始的，而静态变量 `sph` 主要就是 entry 申请的唯一入口。 
+
+```java
+/**
+ * Sentinel Env. This class will trigger all initialization for Sentinel.
+ * Sentinel 环境。这个类将触发 Sentinel 的所有初始化动作。
+ * <p>
+ * NOTE: to prevent deadlocks, other classes' static code block or static field should
+ * 提示：为了防止死锁，其他类的静态代码块或静态字段永远不要引用此类。
+ * NEVER refer to this class.
+ * </p>
+ *
+ * @author jialiang.linjl
+ */
+public class Env {
+
+    public static final Sph sph = new CtSph();
+
+    static {
+        // If init fails, the process will exit.
+        InitExecutor.doInit();
+    }
+
+}
+```
+
+#### InitExecutor 初始化执行器
+`InitExecutor` 的功能是加载已注册的init函数并按顺序执行，其核心也就是利用了 Java 的 SPI 机制，让程序变得可扩展。
+
+SDK 的 ***通信模块***、***集群限流模块*** 和 ***数据源注册模块*** 都是通过该执行器来初始化的。当然，如果有需要我们也可以去进行扩展，方式很简单：只需要实现一个叫 `InitFunc` 的接口，并在 `META-INF/services` 加上全限定类名就好了。
+
+接下来我们看下他是如何进行初始化的，直接看代码吧：
+```java
+public final class InitExecutor {
+
+    // 原子变量，CAS 保证初始化只会执行一次
+    private static AtomicBoolean initialized = new AtomicBoolean(false);
+
+    /**
+     * If one {@link InitFunc} throws an exception, the init process
+     * will immediately be interrupted and the application will exit.
+     *
+     * The initialization will be executed only once.
+     */
+    public static void doInit() {
+        // 保证 doInit 方法只会执行一次
+        if (!initialized.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            // 通过 Java 的 SPI 机制，加载并是实例化目录 META-INF/services 下配置的所有实现了 InitFunc 接口的类
+            ServiceLoader<InitFunc> loader = ServiceLoader.load(InitFunc.class);
+            List<OrderWrapper> initList = new ArrayList<OrderWrapper>();
+            for (InitFunc initFunc : loader) {
+                RecordLog.info("[InitExecutor] Found init func: " + initFunc.getClass().getCanonicalName());
+                // 重新包装 initFunc 并按照 InitOrder 注解的 value 值进行排序
+                insertSorted(initList, initFunc);
+            }
+            // 遍历整个list，执行初始化方法
+            for (OrderWrapper w : initList) {
+                w.func.init();
+                RecordLog.info(String.format("[InitExecutor] Executing %s with order %d",
+                    w.func.getClass().getCanonicalName(), w.order));
+            }
+        } catch (Exception ex) {
+            RecordLog.warn("[InitExecutor] WARN: Initialization failed", ex);
+            ex.printStackTrace();
+        } catch (Error error) {
+            RecordLog.warn("[InitExecutor] ERROR: Initialization failed with fatal error", error);
+            error.printStackTrace();
+        }
+    }
+
+    private static void insertSorted(List<OrderWrapper> list, InitFunc func) {
+        int order = resolveOrder(func);
+        int idx = 0;
+        for (; idx < list.size(); idx++) {
+            if (list.get(idx).getOrder() > order) {
+                break;
+            }
+        }
+        list.add(idx, new OrderWrapper(order, func));
+    }
+
+    // 获取优先级，如果没有注解则使用默认优先级
+    private static int resolveOrder(InitFunc func) {
+        if (!func.getClass().isAnnotationPresent(InitOrder.class)) {
+            return InitOrder.LOWEST_PRECEDENCE;
+        } else {
+            return func.getClass().getAnnotation(InitOrder.class).value();
+        }
+    }
+
+    private InitExecutor() {}
+
+    private static class OrderWrapper {
+        private final int order;
+        private final InitFunc func;
+
+        OrderWrapper(int order, InitFunc func) {
+            this.order = order;
+            this.func = func;
+        }
+
+        int getOrder() {
+            return order;
+        }
+
+        InitFunc getFunc() {
+            return func;
+        }
+    }
+}
+``` 
+
+我们可以看个例子，如果配置了SDK的通信模块它是怎么启动的，代码如下：
+
+```java
+/**
+ * 命令中心：装载了该模块后我们就可以和SDK进行通信，例如查看当前SDK上的规则配置什么的 
+ */
+@InitOrder(-1)
+public class CommandCenterInitFunc implements InitFunc {
+
+    @Override
+    public void init() throws Exception {
+        CommandCenter commandCenter = CommandCenterProvider.getCommandCenter();
+
+        if (commandCenter == null) {
+            RecordLog.warn("[CommandCenterInitFunc] Cannot resolve CommandCenter");
+            return;
+        }
+
+        commandCenter.beforeStart();
+        commandCenter.start();
+        RecordLog.info("[CommandCenterInit] Starting command center: "
+                + commandCenter.getClass().getCanonicalName());
+    }
+}
+
+/**
+ * 心跳发送器：主要是定时和管理端发送心跳信息，用来检测机器是否存活，还会附带发送SDK版本等信息 
+ */
+@InitOrder(-1)
+public class HeartbeatSenderInitFunc implements InitFunc {
+    // ...省略
+    
+    @Override
+    public void init() {
+        HeartbeatSender sender = HeartbeatSenderProvider.getHeartbeatSender();
+        if (sender == null) {
+            RecordLog.warn("[HeartbeatSenderInitFunc] WARN: No HeartbeatSender loaded");
+            return;
+        }
+
+        initSchedulerIfNeeded();
+        long interval = retrieveInterval(sender);
+        setIntervalIfNotExists(interval);
+        scheduleHeartbeatTask(sender, interval);
+    }
+    
+    // ...省略
+}
+```
+可以看到，两个模块初始化的流程基本都是类似的，第一行代码甚至都是再通过SPI来动态加载需要实例化的类，后续也就是初始化和启动操作。
+
+#### Sph 获取 Entry 的入口
+`Sph` 是一个接口，定义了获取 `Entry` 的各种重载方法.能够获取到 `Entry` 就说明通过了资源申请，否则会抛出 `BlockException`。
+
+`Sph` 的唯一实现类是 `CtSph`。
+
+#### CtSph 获取 Entry 
+前面说到过 `Env` 是 Sentinel 程序的启动入口，`Env` 的一个静态变量就是 `CtSph`，现在来看 `CtSph` 的实现。
+
+CtSph 有 3 个静态变量：
+ 1. OBJECTS0: 用作默认的接口参数
+ 2. chainMap: 保存所有的 *<资源:处理器链>* 的映射
+ 3. LOCK: 创建处理器链的锁
+
+`CtSph` 实现了 `Sph` 所有的方法，这些获取 `Entry` 的方法可以分成两大类，一类是 **同步获取Entry**，另一类是 **异步获取Entry**。而获取两种 Entry 的方法，最终就是两个：`entryWithPriority` 和 `asyncEntryWithPriorityInternal`。 
+
+```java
+public class CtSph implements Sph {
+    
+    private Entry entryWithPriority(ResourceWrapper resourceWrapper, int count, boolean prioritized, Object... args)
+        throws BlockException {
+        // 获取上下文
+        Context context = ContextUtil.getContext();
+        if (context instanceof NullContext) {
+            // 如果获取到的是空上下文则说明上下文个数超出了创建限制，这里直接返回，后续规则检查也不会进行了
+            // The {@link NullContext} indicates that the amount of context has exceeded the threshold,
+            // so here init the entry only. No rule checking will be done.
+            return new CtEntry(resourceWrapper, null, context);
+        }
+
+        if (context == null) {
+            // Using default context.
+            // 如果上下文为空则使用默认的上下文
+            context = MyContextUtil.myEnter(Constants.CONTEXT_DEFAULT_NAME, "", resourceWrapper.getType());
+        }
+
+        // Global switch is close, no rule checking will do.
+        // 全局开关，默认是开启状态。如果规则开关关闭则所有策略失效。
+        if (!Constants.ON) {
+            return new CtEntry(resourceWrapper, null, context);
+        }
+
+        // 走到这里很关键，通过 resourceWrapper 查找处理器链（slotChain）
+        ProcessorSlot<Object> chain = lookProcessChain(resourceWrapper);
+
+        /*
+         * Means amount of resources (slot chain) exceeds {@link Constants.MAX_SLOT_CHAIN_SIZE},
+         * so no rule checking will be done.
+         * 处理器链有可能获取到空，原因是在 lookProcessChain 里面做了创建数量限制，因该是怕SDK占用系统资源过多角度考虑设计的
+         */
+        if (chain == null) {
+            return new CtEntry(resourceWrapper, null, context);
+        }
+
+        Entry e = new CtEntry(resourceWrapper, chain, context);
+        try {
+            chain.entry(context, resourceWrapper, null, count, prioritized, args);
+        } catch (BlockException e1) {
+            e.exit(count, args);
+            throw e1;
+        } catch (Throwable e1) {
+            // This should not happen, unless there are errors existing in Sentinel internal.
+            RecordLog.info("Sentinel unexpected exception", e1);
+        }
+        return e;
+    }
+}
+```
 
 
 
