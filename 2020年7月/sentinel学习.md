@@ -161,7 +161,7 @@ CtSph 获取 entry 时会调用 `lookProcessChain` 方法创建 slot 链，一�
         * ClusterNode
 * SlotChain
 
-### 程序的入口
+### SDK 的入口
 我们了解一个组件，需要有特定的思路，通常都是从整体架构开始看，再从入口逐步去了解每个模块。现在我们来探究 Sentinel 作为一个 SDK，它从哪里开始工作的。
 
 #### Env —— Sentinel 初始化之源
@@ -386,8 +386,10 @@ public class CtSph implements Sph {
 
         Entry e = new CtEntry(resourceWrapper, chain, context);
         try {
+            // 执行处理器链处理资源的规则
             chain.entry(context, resourceWrapper, null, count, prioritized, args);
         } catch (BlockException e1) {
+            // 退出 entry
             e.exit(count, args);
             throw e1;
         } catch (Throwable e1) {
@@ -399,8 +401,364 @@ public class CtSph implements Sph {
 }
 ```
 
+接下来继续看 `lookProcessChain` 方法是如何获取处理链的：
+
+```java
+public class CtSph implements Sph {
+    /**
+     * Get {@link ProcessorSlotChain} of the resource. new {@link ProcessorSlotChain} will
+     * be created if the resource doesn't relate one.
+     * 获取当前资源的处理器链，如果当前资源没有相关联的处理器链则创建。
+     *
+     * <p>Same resource({@link ResourceWrapper#equals(Object)}) will share the same
+     * {@link ProcessorSlotChain} globally, no matter in witch {@link Context}.<p/>
+     * 相同的资源共享相同的处理器链，不管上下文是否相同。
+     *
+     * <p>
+     * Note that total {@link ProcessorSlot} count must not exceed {@link Constants#MAX_SLOT_CHAIN_SIZE},
+     * otherwise null will return.
+     * 处理器链的数量必须小于 MAX_SLOT_CHAIN_SIZE，否则直接返回 null
+     * </p>
+     *
+     * @param resourceWrapper target resource
+     * @return {@link ProcessorSlotChain} of the resource
+     */
+    ProcessorSlot<Object> lookProcessChain(ResourceWrapper resourceWrapper) {
+        ProcessorSlotChain chain = chainMap.get(resourceWrapper);
+        // double check 方式获取处理器链
+        if (chain == null) {
+            synchronized (LOCK) {
+                chain = chainMap.get(resourceWrapper);
+                
+                if (chain == null) {
+                    // Entry size limit.
+                    // 超出数量限制返回 null
+                    if (chainMap.size() >= Constants.MAX_SLOT_CHAIN_SIZE) {
+                        return null;
+                    }
+
+                    // 通过 SPI 机制获取 SlotChainBuilder 后创建处理器链
+                    chain = SlotChainProvider.newSlotChain();
+                    Map<ResourceWrapper, ProcessorSlotChain> newMap = new HashMap<ResourceWrapper, ProcessorSlotChain>(
+                        chainMap.size() + 1);
+                    newMap.putAll(chainMap);
+                    newMap.put(resourceWrapper, chain);
+                    // copy on write 更新 资源 到 处理器链 的map
+                    chainMap = newMap;
+                }
+            }
+        }
+        return chain;
+    }
+}
+```
+
+### NodeSelectorSlot 
+```java
+/**
+ * </p>
+ * This class will try to build the calling traces via
+ * 这个类用来尝试建立调用跟踪
+ * <ol>
+ * <li>adding a new {@link DefaultNode} if needed as the last child in the context.
+ * The context's last node is the current node or the parent node of the context. </li>
+ * 如果需要，添加新的 DefaultNode 作为上下文中的最后一个子级。上下文的最后一个节点是上下文的当前节点或父节点。
+ * <li>setting itself to the context current node.</li>
+ * 设置自己作为上下文的当前节点
+ * </ol>
+ * </p>
+ *
+ * <p>It works as follow:</p>
+ * <pre>
+ * ContextUtil.enter("entrance1", "appA");
+ * Entry nodeA = SphU.entry("nodeA");
+ * if (nodeA != null) {
+ *     nodeA.exit();
+ * }
+ * ContextUtil.exit();
+ * </pre>
+ *
+ * Above code will generate the following invocation structure in memory:
+ * 上面的代码将在内存中生成如下调用结构：
+ *
+ * <pre>
+ *
+ *              machine-root
+ *                  /
+ *                 /
+ *           EntranceNode1
+ *               /
+ *              /
+ *        DefaultNode(nodeA)- - - - - -> ClusterNode(nodeA);
+ * </pre>
+ *
+ * <p>
+ * Here the {@link EntranceNode} represents "entrance1" given by
+ * {@code ContextUtil.enter("entrance1", "appA")}.
+ * </p>
+ * <p>
+ * Both DefaultNode(nodeA) and ClusterNode(nodeA) holds statistics of "nodeA", which is given
+ * by {@code SphU.entry("nodeA")}
+ * 上面的 DefaultNode(nodeA) 和 ClusterNode(nodeA) 持有 nodeA 的统计数据。
+ * </p>
+ * <p>
+ * The {@link ClusterNode} is uniquely identified by the ResourceId; the {@link DefaultNode}
+ * is identified by both the resource id and {@link Context}. In other words, one resource
+ * id will generate multiple {@link DefaultNode} for each distinct context, but only one
+ * {@link ClusterNode}.
+ * ClusterNode 由 资源ID 唯一标识；
+ * DefaultNode 由 资源ID 和 上下文 共同标识。换句话说，一个 资源ID 为不同的上下文生成多个 DefaultNode，但只有一个 ClusterNode。
+ * </p>
+ * <p>
+ * the following code shows one resource id in two different context:
+ * </p>
+ *
+ * <pre>
+ *    ContextUtil.enter("entrance1", "appA");
+ *    Entry nodeA = SphU.entry("nodeA");
+ *    if (nodeA != null) {
+ *        nodeA.exit();
+ *    }
+ *    ContextUtil.exit();
+ *
+ *    ContextUtil.enter("entrance2", "appA");
+ *    nodeA = SphU.entry("nodeA");
+ *    if (nodeA != null) {
+ *        nodeA.exit();
+ *    }
+ *    ContextUtil.exit();
+ * </pre>
+ *
+ * Above code will generate the following invocation structure in memory:
+ *
+ * <pre>
+ *
+ *                  machine-root
+ *                  /         \
+ *                 /           \
+ *         EntranceNode1   EntranceNode2
+ *               /               \
+ *              /                 \
+ *      DefaultNode(nodeA)   DefaultNode(nodeA)
+ *             |                    |
+ *             +- - - - - - - - - - +- - - - - - -> ClusterNode(nodeA);
+ * </pre>
+ *
+ * <p>
+ * As we can see, two {@link DefaultNode} are created for "nodeA" in two context, but only one
+ * {@link ClusterNode} is created.
+ * 正如我们所见，nodeA 创建了两个 DefaultNode，
+ * </p>
+ *
+ * <p>
+ * We can also check this structure by calling: <br/>
+ * {@code curl http://localhost:8719/tree?type=root}
+ * </p>
+ *
+ * @author jialiang.linjl
+ * @see EntranceNode
+ * @see ContextUtil
+ */
+public class NodeSelectorSlot extends AbstractLinkedProcessorSlot<Object> {
+
+    /**
+     * {@link DefaultNode}s of the same resource in different context.
+     */
+    private volatile Map<String, DefaultNode> map = new HashMap<String, DefaultNode>(10);
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, Object obj, int count, boolean prioritized, Object... args)
+        throws Throwable {
+        /*
+         * It's interesting that we use context name rather resource name as the map key.
+         * 有意思的是我们使用上下文名称而不是使用资源名来做map的key
+         *
+         * Remember that same resource({@link ResourceWrapper#equals(Object)}) will share
+         * the same {@link ProcessorSlotChain} globally, no matter in which context. So if
+         * code goes into {@link #entry(Context, ResourceWrapper, DefaultNode, int, Object...)},
+         * the resource name must be same but context name may not.
+         * 请记住相同的资源将共享相同的处理器链，不管上下文是什么。所以如果代码执行进 entry，资源名必须相同，但上下文可能不同。
+         *
+         * If we use {@link com.alibaba.csp.sentinel.SphU#entry(String resource)} to
+         * enter same resource in different context, using context name as map key can
+         * distinguish the same resource. In this case, multiple {@link DefaultNode}s will be created
+         * of the same resource name, for every distinct context (different context name) each.
+         * 如果我们在不同的上下文使用 SphU.entry 进入相同的资源，使用上下文名称作为map的key可以区分不同的资源。
+         * 在这种情况下，将创建多个 DefaultNode 对于每个不同的上下文（不同的上下文名称），都具有相同的资源名称。
+         *
+         * Consider another question. One resource may have multiple {@link DefaultNode},
+         * so what is the fastest way to get total statistics of the same resource?
+         * The answer is all {@link DefaultNode}s with same resource name share one
+         * {@link ClusterNode}. See {@link ClusterBuilderSlot} for detail.
+         * 考虑另一个问题。一个资源可能具有多个 DefaultNode，那么获取同一资源的总统计信息的最快方法是什么？
+         * 答案是所有具有相同资源名称的{@link DefaultNode}共享一个{@link ClusterNode}。
+         * 有关详细信息，请参见{@link ClusterBuilderSlot}。
+         */
+        DefaultNode node = map.get(context.getName());
+        if (node == null) {
+            synchronized (this) {
+                node = map.get(context.getName());
+                if (node == null) {
+                    node = new DefaultNode(resourceWrapper, null);
+                    HashMap<String, DefaultNode> cacheMap = new HashMap<String, DefaultNode>(map.size());
+                    cacheMap.putAll(map);
+                    cacheMap.put(context.getName(), node);
+                    map = cacheMap;
+                    // Build invocation tree
+                    ((DefaultNode) context.getLastNode()).addChild(node);
+                }
+
+            }
+        }
+
+        context.setCurNode(node);
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+}
+```
 
 
+#### ClusterBuilderSolt
+```java
+/**
+ * <p>
+ * This slot maintains resource running statistics (response time, qps, thread
+ * count, exception), and a list of callers as well which is marked by
+ *  * {@link ContextUtil#enter(String origin)}
+ * 这个slot保持这资源运行时的统计数据（响应时间，qps，线程数，异常情况），以及被 ContextUtil.entry 标记的调用者列表
+ * </p>
+ * <p>
+ * One resource has only one cluster node, while one resource can have multiple
+ * default nodes.
+ * 一个资源只有一个ClusterNode，但是一个资源可以有多个DefaultNode
+ * </p>
+ *
+ * @author jialiang.linjl
+ */
+public class ClusterBuilderSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
 
+    /**
+     * <p>
+     * Remember that same resource({@link ResourceWrapper#equals(Object)}) will share
+     * the same {@link ProcessorSlotChain} globally, no matter in witch context. So if
+     * code goes into {@link #entry(Context, ResourceWrapper, DefaultNode, int, boolean, Object...)},
+     * the resource name must be same but context name may not.
+     * </p>
+     * <p>
+     * To get total statistics of the same resource in different context, same resource
+     * shares the same {@link ClusterNode} globally. All {@link ClusterNode}s are cached
+     * in this map.
+     * </p>
+     * <p>
+     * The longer the application runs, the more stable this mapping will
+     * become. so we don't concurrent map but a lock. as this lock only happens
+     * at the very beginning while concurrent map will hold the lock all the time.
+     * 程序运行的时间越长，这个映射将变得越稳定。所以我们只需要一个锁而不需要使用并发map，锁只在一开始使用，而使用并发map那么锁将一直存在。
+     * </p>
+     */
+    private static volatile Map<ResourceWrapper, ClusterNode> clusterNodeMap = new HashMap<>();
+
+    private static final Object lock = new Object();
+
+    private volatile ClusterNode clusterNode = null;
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
+                      boolean prioritized, Object... args)
+        throws Throwable {
+        if (clusterNode == null) {
+            synchronized (lock) {
+                if (clusterNode == null) {
+                    // Create the cluster node.
+                    clusterNode = new ClusterNode();
+                    HashMap<ResourceWrapper, ClusterNode> newMap = new HashMap<>(Math.max(clusterNodeMap.size(), 16));
+                    newMap.putAll(clusterNodeMap);
+                    newMap.put(node.getId(), clusterNode);
+
+                    clusterNodeMap = newMap;
+                }
+            }
+        }
+        node.setClusterNode(clusterNode);
+
+        /*
+         * if context origin is set, we should get or create a new {@link Node} of
+         * the specific origin.
+         * 如果设置了上下文来源，则应获取或创建一个特定来源的新节点。
+         */
+        if (!"".equals(context.getOrigin())) {
+            Node originNode = node.getClusterNode().getOrCreateOriginNode(context.getOrigin());
+            context.getCurEntry().setOriginNode(originNode);
+        }
+
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+
+    /**
+     * Get {@link ClusterNode} of the resource of the specific type.
+     *
+     * @param id   resource name.
+     * @param type invoke type.
+     * @return the {@link ClusterNode}
+     */
+    public static ClusterNode getClusterNode(String id, EntryType type) {
+        return clusterNodeMap.get(new StringResourceWrapper(id, type));
+    }
+
+    /**
+     * Get {@link ClusterNode} of the resource name.
+     *
+     * @param id resource name.
+     * @return the {@link ClusterNode}.
+     */
+    public static ClusterNode getClusterNode(String id) {
+        if (id == null) {
+            return null;
+        }
+        ClusterNode clusterNode = null;
+
+        for (EntryType nodeType : EntryType.values()) {
+            clusterNode = clusterNodeMap.get(new StringResourceWrapper(id, nodeType));
+            if (clusterNode != null) {
+                break;
+            }
+        }
+
+        return clusterNode;
+    }
+
+    /**
+     * Get {@link ClusterNode}s map, this map holds all {@link ClusterNode}s, it's key is resource name,
+     * value is the related {@link ClusterNode}. <br/>
+     * DO NOT MODIFY the map returned.
+     *
+     * @return all {@link ClusterNode}s
+     */
+    public static Map<ResourceWrapper, ClusterNode> getClusterNodeMap() {
+        return clusterNodeMap;
+    }
+
+    /**
+     * Reset all {@link ClusterNode}s. Reset is needed when {@link IntervalProperty#INTERVAL} or
+     * {@link SampleCountProperty#SAMPLE_COUNT} is changed.
+     */
+    public static void resetClusterNodes() {
+        for (ClusterNode node : clusterNodeMap.values()) {
+            node.reset();
+        }
+    }
+}
+
+```
 
 
