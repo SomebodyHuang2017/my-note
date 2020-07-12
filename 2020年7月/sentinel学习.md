@@ -196,7 +196,7 @@ public class Env {
 
 SDK 的 ***通信模块***、***集群限流模块*** 和 ***数据源注册模块*** 都是通过该执行器来初始化的。当然，如果有需要我们也可以去进行扩展，方式很简单：只需要实现一个叫 `InitFunc` 的接口，并在 `META-INF/services` 加上全限定类名就好了。
 
-接下来我们看下他是如何进行初始化的，直接看代码吧：
+接下来我们看下他是如何进行初始化的，直接看代码：
 ```java
 public final class InitExecutor {
 
@@ -453,7 +453,45 @@ public class CtSph implements Sph {
 }
 ```
 
+可以知道资源和处理器链的关系是1对1的，chainMap 由 CtSph 全局保存。
+
+### SlotChainProvider 处理器链提供者
+通过SPI的机制产生 SlotChainBuilder，Sentinel 提供了一个默认的 SlotChainBuilder。
+DefaultSlotChainBuilder 负责建造处理器链，处理器链由很多个插槽依次编排而成：
+
+```java
+public class DefaultSlotChainBuilder implements SlotChainBuilder {
+
+    @Override
+    public ProcessorSlotChain build() {
+        ProcessorSlotChain chain = new DefaultProcessorSlotChain();
+        chain.addLast(new NodeSelectorSlot());
+        chain.addLast(new ClusterBuilderSlot());
+        chain.addLast(new LogSlot());
+        chain.addLast(new StatisticSlot());
+        chain.addLast(new SystemSlot());
+        chain.addLast(new AuthoritySlot());
+        chain.addLast(new FlowSlot());
+        chain.addLast(new DegradeSlot());
+        return chain;
+    }
+}
+```
+
+#### 资源路径节点树解析
+下面这张图梳理出了各种类型的节点之间的关系，清楚了这张图的含义便能理解Sentinel是如何做流量管理的。
+![Sentinel资源路径节点树解析](./pic/Sentinel资源路径节点树解析.png)
+
+Sentinel 为了构建调用链关系，设计了树状节点 `Node` 的概念，从上图可以看到节点有5种：
+1. ROOT 根节点，负责统计整个服务的流控数据，在 `SystemSlot` 中用来做系统保护。由 `com.alibaba.csp.sentinel.Constants` 维护。
+2. EntranceNode 入口节点，不同的上下文有不同的 `EntranceNode`。由 `com.alibaba.csp.sentinel.context.Context` 维护。
+3. ClusterNode 聚集节点，负责统计资源的流控数据，与资源是1对1的关系，在 `FlowSlot` 中用来做资源流控保护。资源与 `ClusterNode` 的关系，由 `com.alibaba.csp.sentinel.slots.clusterbuilder.ClusterBuilderSlot` 维护。
+4. OriginNode 调用源节点，负责统计某个调用源的数据，与调用源是1对1的关系，在 `FlowSlot` 中用来做配额流控。由 `com.alibaba.csp.sentinel.node.ClusterNode` 维护。
+5. DefaultNode 上下文资源节点，负责统计当前上下文对当前资源的流控数据，同一个上下文和一个资源对应1个该节点，在 `FlowSlot` 用于链流控制（通过入口资源）。由 `com.alibaba.csp.sentinel.slots.nodeselector.NodeSelectorSlot` 维护。
+
+
 ### NodeSelectorSlot 
+创建上下文资源节点，并设置当前节点为上下文节点。
 ```java
 /**
  * </p>
@@ -622,8 +660,8 @@ public class NodeSelectorSlot extends AbstractLinkedProcessorSlot<Object> {
 }
 ```
 
-
-#### ClusterBuilderSolt
+#### ClusterBuilderSlot
+根据资源来创建聚集节点，并且设置各种节点的关系。
 ```java
 /**
  * <p>
@@ -761,4 +799,932 @@ public class ClusterBuilderSlot extends AbstractLinkedProcessorSlot<DefaultNode>
 
 ```
 
+#### LogSlot
+用于记录调用链的日志，并且捕获内部异常。
+```java
+/**
+ * A {@link com.alibaba.csp.sentinel.slotchain.ProcessorSlot} that is response for logging block exceptions
+ * to provide concrete logs for troubleshooting.
+ */
+public class LogSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
 
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode obj, int count, boolean prioritized, Object... args)
+        throws Throwable {
+        try {
+            fireEntry(context, resourceWrapper, obj, count, prioritized, args);
+        } catch (BlockException e) {
+            EagleEyeLogUtil.log(resourceWrapper.getName(), e.getClass().getSimpleName(), e.getRuleLimitApp(),
+                context.getOrigin(), count);
+            throw e;
+        } catch (Throwable e) {
+            RecordLog.warn("Unexpected entry exception", e);
+        }
+
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        try {
+            fireExit(context, resourceWrapper, count, args);
+        } catch (Throwable e) {
+            RecordLog.warn("Unexpected entry exit exception", e);
+        }
+    }
+}
+```
+
+#### StatisticSlot
+资源统计节点，负责采集各种指标数据。
+```java
+/**
+ * <p>
+ * A processor slot that dedicates to real time statistics.
+ * 专用于实时统计信息的处理器插槽。
+ * When entering this slot, we need to separately count the following
+ * information:
+ * 进入此插槽时，我们需要分别计算以下信息：
+ *
+ * <ul>
+ * <li>{@link ClusterNode}: total statistics of a cluster node of the resource ID.</li>
+ * 聚集节点：资源ID 的聚集节点的总统计信息
+ *
+ * <li>Origin node: statistics of a cluster node from different callers/origins.</li>
+ * 源头节点：来自不同调用者/来源的集群节点的统计信息
+ *
+ * <li>{@link DefaultNode}: statistics for specific resource name in the specific context.</li>
+ * 默认节点：特定上下文中特定资源名称的统计信息。
+ *
+ * <li>Finally, the sum statistics of all entrances.</li>
+ * 最后，是所有入口的总和统计。
+ *
+ * </ul>
+ * </p>
+ *
+ * @author jialiang.linjl
+ * @author Eric Zhao
+ */
+public class StatisticSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
+                      boolean prioritized, Object... args) throws Throwable {
+        try {
+            // Do some checking.
+            fireEntry(context, resourceWrapper, node, count, prioritized, args);
+
+            // Request passed, add thread count and pass count.
+            node.increaseThreadNum(); // 线程数加1
+            node.addPassRequest(count); // 通过的请求数增加count
+
+            if (context.getCurEntry().getOriginNode() != null) {
+                // Add count for origin node.
+                // 源头节点的线程数加1
+                context.getCurEntry().getOriginNode().increaseThreadNum();
+                // 源头节点通过请求数加count
+                context.getCurEntry().getOriginNode().addPassRequest(count);
+            }
+
+            if (resourceWrapper.getType() == EntryType.IN) {
+                // Add count for global inbound entry node for global statistics.
+                // 如果是入口流量
+                // 全局入口流量数据加1
+                Constants.ENTRY_NODE.increaseThreadNum();
+                // 全局入口流量通过量加1
+                Constants.ENTRY_NODE.addPassRequest(count);
+            }
+
+            // Handle pass event with registered entry callback handlers.
+            // 通过SPI机制增加扩展，触发监听事件
+            for (ProcessorSlotEntryCallback<DefaultNode> handler : StatisticSlotCallbackRegistry.getEntryCallbacks()) {
+                handler.onPass(context, resourceWrapper, node, count, args);
+            }
+        } catch (PriorityWaitException ex) {
+            node.increaseThreadNum();
+            if (context.getCurEntry().getOriginNode() != null) {
+                // Add count for origin node.
+                context.getCurEntry().getOriginNode().increaseThreadNum();
+            }
+
+            if (resourceWrapper.getType() == EntryType.IN) {
+                // Add count for global inbound entry node for global statistics.
+                Constants.ENTRY_NODE.increaseThreadNum();
+            }
+            // Handle pass event with registered entry callback handlers.
+            for (ProcessorSlotEntryCallback<DefaultNode> handler : StatisticSlotCallbackRegistry.getEntryCallbacks()) {
+                handler.onPass(context, resourceWrapper, node, count, args);
+            }
+        } catch (BlockException e) {
+            // Blocked, set block exception to current entry.
+            // 这里的异常是阻塞异常
+            context.getCurEntry().setError(e);
+
+            // Add block count.
+            node.increaseBlockQps(count);
+            if (context.getCurEntry().getOriginNode() != null) {
+                context.getCurEntry().getOriginNode().increaseBlockQps(count);
+            }
+
+            if (resourceWrapper.getType() == EntryType.IN) {
+                // Add count for global inbound entry node for global statistics.
+                Constants.ENTRY_NODE.increaseBlockQps(count);
+            }
+
+            // Handle block event with registered entry callback handlers.
+            for (ProcessorSlotEntryCallback<DefaultNode> handler : StatisticSlotCallbackRegistry.getEntryCallbacks()) {
+                handler.onBlocked(e, context, resourceWrapper, node, count, args);
+            }
+
+            throw e;
+        } catch (Throwable e) {
+            // Unexpected error, set error to current entry.
+            // 这里的异常是SDK的内部异常
+            context.getCurEntry().setError(e);
+
+            // This should not happen.
+            // 由于当前异常是SDK异常，所以不应该发生
+            node.increaseExceptionQps(count);
+            if (context.getCurEntry().getOriginNode() != null) {
+                context.getCurEntry().getOriginNode().increaseExceptionQps(count);
+            }
+
+            if (resourceWrapper.getType() == EntryType.IN) {
+                Constants.ENTRY_NODE.increaseExceptionQps(count);
+            }
+            throw e;
+        }
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        DefaultNode node = (DefaultNode)context.getCurNode();
+
+        if (context.getCurEntry().getError() == null) {
+            // Calculate response time (max RT is TIME_DROP_VALVE).
+            long rt = TimeUtil.currentTimeMillis() - context.getCurEntry().getCreateTime();
+            if (rt > Constants.TIME_DROP_VALVE) {
+                rt = Constants.TIME_DROP_VALVE;
+            }
+
+            // Record response time and success count.
+            node.addRtAndSuccess(rt, count);
+            if (context.getCurEntry().getOriginNode() != null) {
+                context.getCurEntry().getOriginNode().addRtAndSuccess(rt, count);
+            }
+
+            node.decreaseThreadNum();
+
+            if (context.getCurEntry().getOriginNode() != null) {
+                context.getCurEntry().getOriginNode().decreaseThreadNum();
+            }
+
+            if (resourceWrapper.getType() == EntryType.IN) {
+                Constants.ENTRY_NODE.addRtAndSuccess(rt, count);
+                Constants.ENTRY_NODE.decreaseThreadNum();
+            }
+        } else {
+            // Error may happen.
+        }
+
+        // Handle exit event with registered exit callback handlers.
+        Collection<ProcessorSlotExitCallback> exitCallbacks = StatisticSlotCallbackRegistry.getExitCallbacks();
+        for (ProcessorSlotExitCallback handler : exitCallbacks) {
+            handler.onExit(context, resourceWrapper, count, args);
+        }
+
+        fireExit(context, resourceWrapper, count);
+    }
+}
+```
+#### SystemSlot
+系统保护节点，可以根据系统总入口流量进行流控，也可以根据 load，cpu.busy 信息进行基于bbr算法的系统保护。
+```java
+/**
+ * A {@link ProcessorSlot} that dedicates to {@link SystemRule} checking.
+ *
+ * @author jialiang.linjl
+ * @author leyou
+ */
+public class SystemSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
+                      boolean prioritized, Object... args) throws Throwable {
+        SystemRuleManager.checkSystem(resourceWrapper);
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+
+}
+```
+##### SystemRuleManager 系统规则管理器
+```java
+public class SystemRuleManager {
+    
+        /**
+         * Apply {@link SystemRule} to the resource. Only inbound traffic will be checked.
+         *
+         * @param resourceWrapper the resource.
+         * @throws BlockException when any system rule's threshold is exceeded.
+         */
+        public static void checkSystem(ResourceWrapper resourceWrapper) throws BlockException {
+            // Ensure the checking switch is on.
+            // 系统保护策略，只要有一个规则开了，那么系统保护规则就开了，可以看 loadSystemConf() 方法
+            if (!checkSystemStatus.get()) {
+                return;
+            }
+    
+            // for inbound traffic only
+            // 只针对入口流量生效
+            if (resourceWrapper.getType() != EntryType.IN) {
+                return;
+            }
+    
+            // total qps
+            double currentQps = Constants.ENTRY_NODE == null ? 0.0 : Constants.ENTRY_NODE.successQps();
+            if (currentQps > qps) {
+                // 当前QPS大于系统保护设定的QPS则触发系统保护限制异常
+                throw new SystemBlockException(resourceWrapper.getName(), "qps");
+            }
+    
+            // total thread
+            int currentThread = Constants.ENTRY_NODE == null ? 0 : Constants.ENTRY_NODE.curThreadNum();
+            if (currentThread > maxThread) {
+                // 当前等待的线程数大于系统保护设定的线程数则触发系统保护限制异常
+                throw new SystemBlockException(resourceWrapper.getName(), "thread");
+            }
+    
+            double rt = Constants.ENTRY_NODE == null ? 0 : Constants.ENTRY_NODE.avgRt();
+            if (rt > maxRt) {
+                // 当前平均响应时间大于系统保护设定的平均响应时间则触发系统保护限制异常
+                throw new SystemBlockException(resourceWrapper.getName(), "rt");
+            }
+    
+            // load. BBR algorithm.
+            // 是否启用了bbr算法 && 当前系统的平均负载 > 最高系统负载
+            if (highestSystemLoadIsSet && getCurrentSystemAvgLoad() > highestSystemLoad) {
+                if (!checkBbr(currentThread)) {
+                    throw new SystemBlockException(resourceWrapper.getName(), "load");
+                }
+            }
+    
+            // cpu usage
+            if (highestCpuUsageIsSet && getCurrentCpuUsage() > highestCpuUsage) {
+                if (!checkBbr(currentThread)) {
+                    throw new SystemBlockException(resourceWrapper.getName(), "cpu");
+                }
+            }
+        }
+    
+        /*
+         * 触发机制是 load 过高 或 cpu.busy 过高
+         * bbr是根据过去1s中内，通过的最大请求数和当前线程数比较
+         */
+        private static boolean checkBbr(int currentThread) {
+            // 当前线程数大于1 && 当前线程数 > 入口流量的最大成功QPS * 最小的RT / 1000
+            // maxSuccessQps = 1秒内通过的请求数
+            // minRt = 1秒内的最小处理时间
+    
+            // maxSuccessQps * minRt / 1000 的含义是：系统可承载的最大容量（最大请求数）
+    
+            if (currentThread > 1 &&
+                currentThread > Constants.ENTRY_NODE.maxSuccessQps() * Constants.ENTRY_NODE.minRt() / 1000) {
+                return false;
+            }
+            return true;
+        }
+}
+```
+#### AuthoritySlot
+权限校验插槽，进行黑白名单校验。
+
+```java
+public class AuthoritySlot extends AbstractLinkedProcessorSlot<DefaultNode> {
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count, boolean prioritized, Object... args)
+        throws Throwable {
+        // 检查黑白名单权限
+        checkBlackWhiteAuthority(resourceWrapper, context);
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+
+    void checkBlackWhiteAuthority(ResourceWrapper resource, Context context) throws AuthorityException {
+        // 获取所有 (资源: 权限校验规则集合) 映射
+        Map<String, Set<AuthorityRule>> authorityRules = AuthorityRuleManager.getAuthorityRules();
+
+        if (authorityRules == null) {
+            return;
+        }
+
+        // 获取当前资源关联的权限校验规则
+        Set<AuthorityRule> rules = authorityRules.get(resource.getName());
+        if (rules == null) {
+            return;
+        }
+
+        // 遍历所有规则，进行权限检查
+        for (AuthorityRule rule : rules) {
+            if (!AuthorityRuleChecker.passCheck(rule, context)) {
+                throw new AuthorityException(context.getOrigin(), rule);
+            }
+        }
+    }
+}
+```
+
+权限规则检查器：
+```java
+final class AuthorityRuleChecker {
+
+    static boolean passCheck(AuthorityRule rule, Context context) {
+        String requester = context.getOrigin();
+
+        // Empty origin or empty limitApp will pass.
+        // 空值直接返回
+        if (StringUtil.isEmpty(requester) || StringUtil.isEmpty(rule.getLimitApp())) {
+            return true;
+        }
+
+        // Do exact match with origin name.
+        // limitApp 直接做成集合多好，就不需要indexOf和匹配了
+        int pos = rule.getLimitApp().indexOf(requester);
+        boolean contain = pos > -1;
+
+        if (contain) {
+            boolean exactlyMatch = false;
+            String[] appArray = rule.getLimitApp().split(",");
+            for (String app : appArray) {
+                if (requester.equals(app)) {
+                    exactlyMatch = true;
+                    break;
+                }
+            }
+
+            contain = exactlyMatch;
+        }
+
+        int strategy = rule.getStrategy();
+        if (strategy == RuleConstant.AUTHORITY_BLACK && contain) {
+            // 在黑名单中
+            return false;
+        }
+
+        if (strategy == RuleConstant.AUTHORITY_WHITE && !contain) {
+            // 不在白名单中
+            return false;
+        }
+
+        return true;
+    }
+
+    private AuthorityRuleChecker() {}
+}
+```
+
+#### FlowSlot
+流量控制插槽，实现各种策略的流控。
+```java
+/**
+ * <p>
+ * Combined the runtime statistics collected from the previous
+ * slots (NodeSelectorSlot, ClusterNodeBuilderSlot, and StatisticSlot), FlowSlot
+ * will use pre-set rules to decide whether the incoming requests should be
+ * blocked.
+ * 结合前面各种slot的运行时统计数据，流控slot将用提前设定好的规则决定是否要放过当前请求。
+ *
+ * </p>
+ *
+ * <p>
+ * {@code SphU.entry(resourceName)} will throw {@code FlowException} if any rule is
+ * triggered. Users can customize their own logic by catching {@code FlowException}.
+ * <p>
+ * 如果触发规则，SphU.entry 将抛出 FlowException，用户可以自定义他们的逻辑去捕捉流控异常
+ *
+ * </p>
+ *
+ * <p>
+ * One resource can have multiple flow rules. FlowSlot traverses these rules
+ * until one of them is triggered or all rules have been traversed.
+ * 一个资源可以拥有多条流控规则，FlowSlot 遍历这些规则，直到触发其中一个规则或遍历所有规则。
+ * </p>
+ *
+ * <p>
+ * Each {@link FlowRule} is mainly composed of these factors: grade, strategy, path. We
+ * can combine these factors to achieve different effects.
+ * 每个 FlowRule 主要由以下因素组成：等级，策略，路径。 我们可以结合这些因素来达到不同的效果。
+ * </p>
+ *
+ * <p>
+ * The grade is defined by the {@code grade} field in {@link FlowRule}. Here, 0 for thread
+ * isolation and 1 for request count shaping (QPS). Both thread count and request
+ * count are collected in real runtime, and we can view these statistics by
+ * following command:
+ * grade 由 FlowRule 的 grade 字段定义，值为 0 就是线程隔离，为 1 就是请求塑形。
+ * 线程数和请求数都是运行时实时收集的，我们也可以通过 tree 命令查看：
+ * </p>
+ *
+ * <pre>
+ * curl http://localhost:8719/tree
+ *
+ * idx id    thread pass  blocked   success total aRt   1m-pass   1m-block   1m-all   exception
+ * 2   abc647 0      460    46          46   1    27      630       276        897      0
+ * </pre>
+ *
+ * <ul>
+ * <li>{@code thread} for the count of threads that is currently processing the resource</li>
+ * <li>{@code pass} for the count of incoming request within one second</li>
+ * <li>{@code blocked} for the count of requests blocked within one second</li>
+ * <li>{@code success} for the count of the requests successfully handled by Sentinel within one second</li>
+ * <li>{@code RT} for the average response time of the requests within a second</li>
+ * <li>{@code total} for the sum of incoming requests and blocked requests within one second</li>
+ * <li>{@code 1m-pass} is for the count of incoming requests within one minute</li>
+ * <li>{@code 1m-block} is for the count of a request blocked within one minute</li>
+ * <li>{@code 1m-all} is the total of incoming and blocked requests within one minute</li>
+ * <li>{@code exception} is for the count of business (customized) exceptions in one second</li>
+ * </ul>
+ * <p>
+ * This stage is usually used to protect resources from occupying. If a resource
+ * takes long time to finish, threads will begin to occupy. The longer the
+ * response takes, the more threads occupy.
+ * 此阶段通常用于保护资源不被占用。 如果资源需要很长时间才能完成，线程将开始占用。 响应时间越长，占用的线程越多。
+ * <p>
+ * Besides counter, thread pool or semaphore can also be used to achieve this.
+ * 除了计数器之外，线程池或信号量也可以用于实现此目的。
+ * <p>
+ * - Thread pool: Allocate a thread pool to handle these resource. When there is
+ * no more idle thread in the pool, the request is rejected without affecting
+ * other resources.
+ * 线程池：分配线程池来处理这些资源。 当池中没有更多空闲线程时，将拒绝该请求，而不会影响其他资源。
+ * <p>
+ * - Semaphore: Use semaphore to control the concurrent count of the threads in
+ * this resource.
+ * 信号量：使用信号量可控制此资源中线程的并发计数。
+ * <p>
+ * The benefit of using thread pool is that, it can walk away gracefully when
+ * time out. But it also bring us the cost of context switch and additional
+ * threads. If the incoming requests is already served in a separated thread,
+ * for instance, a Servlet HTTP request, it will almost double the threads count if
+ * using thread pool.
+ * 使用线程池的好处是，它可以在超时时正常退出。 但这也给我们带来了上下文切换和附加线程的成本。
+ * 如果传入的请求已经在单独的线程（例如Servlet HTTP请求）中提供服务，则如果使用线程池，它将几乎使线程数加倍。
+ *
+ * <h3>Traffic Shaping</h3>
+ * 流量塑形
+ * <p>
+ * When QPS exceeds the threshold, Sentinel will take actions to control the incoming request,
+ * and is configured by {@code controlBehavior} field in flow rules.
+ * 当QPS超出了阈值，sentinel将采取措施控制进入的请求，并由流规则中的 controlBehavior 字段配置。
+ *
+ * </p>
+ * <ol>
+ * <li>Immediately reject ({@code RuleConstant.CONTROL_BEHAVIOR_DEFAULT})</li>
+ * 直接拒绝
+ * <p>
+ * This is the default behavior. The exceeded request is rejected immediately
+ * and the FlowException is thrown
+ * 这是默认行为。 超出的请求将立即被拒绝，并抛出FlowException
+ * </p>
+ *
+ * <li>Warmup ({@code RuleConstant.CONTROL_BEHAVIOR_WARM_UP})</li>
+ * 热启动
+ * <p>
+ * If the load of system has been low for a while, and a large amount of
+ * requests comes, the system might not be able to handle all these requests at
+ * once. However if we steady increase the incoming request, the system can warm
+ * up and finally be able to handle all the requests.
+ * This warmup period can be configured by setting the field {@code warmUpPeriodSec} in flow rules.
+ * 如果系统的负载持续一段时间很低，并且有大量请求到来，则系统可能无法立即处理所有这些请求。
+ * 但是，如果我们稳定增加传入的请求，则系统可以预热并最终能够处理所有请求。
+ * 可以通过在流规则中设置字段 warmUpPeriodSec 来配置此预热时间。
+ * </p>
+ *
+ * <li>Uniform Rate Limiting ({@code RuleConstant.CONTROL_BEHAVIOR_RATE_LIMITER})</li>
+ * 均匀速率限流
+ * <p>
+ * This strategy strictly controls the interval between requests.
+ * In other words, it allows requests to pass at a stable, uniform rate.
+ * 此策略严格控制请求之间的间隔。 换句话说，它允许请求以稳定，统一的速率通过。
+ * </p>
+ * <img src="https://raw.githubusercontent.com/wiki/alibaba/Sentinel/image/uniform-speed-queue.png" style="max-width:
+ * 60%;"/>
+ * <p>
+ * This strategy is an implement of <a href="https://en.wikipedia.org/wiki/Leaky_bucket">leaky bucket</a>.
+ * It is used to handle the request at a stable rate and is often used in burst traffic (e.g. message handling).
+ * When a large number of requests beyond the system’s capacity arrive
+ * at the same time, the system using this strategy will handle requests and its
+ * fixed rate until all the requests have been processed or time out.
+ * 这个策略的实现方式是漏桶，它用于以稳定的速率处理请求，并且经常用于突发流量（例如消息处理）。
+ * 当超过系统容量的大量请求同时到达时，使用此策略的系统将处理请求及其固定速率，直到所有请求都已处理或超时为止。
+ * </p>
+ * </ol>
+ *
+ * @author jialiang.linjl
+ * @author Eric Zhao
+ */
+public class FlowSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
+
+    private final FlowRuleChecker checker;
+
+    public FlowSlot() {
+        // 使用默认的流控规则检查器
+        this(new FlowRuleChecker());
+    }
+
+    /**
+     * Package-private for test.
+     *
+     * @param checker flow rule checker
+     * @since 1.6.1
+     */
+    FlowSlot(FlowRuleChecker checker) {
+        AssertUtil.notNull(checker, "flow checker should not be null");
+        this.checker = checker;
+    }
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count,
+                      boolean prioritized, Object... args) throws Throwable {
+        checkFlow(resourceWrapper, context, node, count, prioritized);
+
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    void checkFlow(ResourceWrapper resource, Context context, DefaultNode node, int count, boolean prioritized)
+            throws BlockException {
+        checker.checkFlow(ruleProvider, resource, context, node, count, prioritized);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+
+    // 规则提供者
+    private final Function<String, Collection<FlowRule>> ruleProvider = new Function<String, Collection<FlowRule>>() {
+        @Override
+        public Collection<FlowRule> apply(String resource) {
+            // Flow rule map should not be null.
+            Map<String, List<FlowRule>> flowRules = FlowRuleManager.getFlowRuleMap();
+            return flowRules.get(resource);
+        }
+    };
+}
+```
+主要的方法是 FlowRuleChecker.checkFlow 方法。
+```java
+public class FlowRuleChecker {
+
+    public void checkFlow(Function<String, Collection<FlowRule>> ruleProvider, ResourceWrapper resource,
+                          Context context, DefaultNode node, int count, boolean prioritized) throws BlockException {
+        if (ruleProvider == null || resource == null) {
+            return;
+        }
+        Collection<FlowRule> rules = ruleProvider.apply(resource.getName());
+        if (rules != null) {
+            for (FlowRule rule : rules) {
+                if (!canPassCheck(rule, context, node, count, prioritized)) {
+                    throw new FlowException(rule.getLimitApp(), rule);
+                }
+            }
+        }
+    }
+
+    public boolean canPassCheck(/*@NonNull*/ FlowRule rule, Context context, DefaultNode node,
+                                                    int acquireCount) {
+        return canPassCheck(rule, context, node, acquireCount, false);
+    }
+
+    public boolean canPassCheck(/*@NonNull*/ FlowRule rule, Context context, DefaultNode node, int acquireCount,
+                                                    boolean prioritized) {
+        // 在加载规则的时候没有limitApp也会赋值为default，所以到这里还是为null的话，就直接返回通过
+        String limitApp = rule.getLimitApp();
+        if (limitApp == null) {
+            return true;
+        }
+
+        // 如果是集群限流规则，则进行集群限流check
+        // todo 疑问：集群限流规则不应该要在本地限流之后做吗？SDK侧限流做兜底
+        // todo 解答：在 fallbackToLocalOrPass 会降级到本地check
+        if (rule.isClusterMode()) {
+            return passClusterCheck(rule, context, node, acquireCount, prioritized);
+        }
+
+        // 本地限流check
+        return passLocalCheck(rule, context, node, acquireCount, prioritized);
+    }
+
+    private static boolean passLocalCheck(FlowRule rule, Context context, DefaultNode node, int acquireCount,
+                                          boolean prioritized) {
+        // 根据策略选择节点
+        Node selectedNode = selectNodeByRequesterAndStrategy(rule, context, node);
+        if (selectedNode == null) {
+            return true;
+        }
+
+        return rule.getRater().canPass(selectedNode, acquireCount, prioritized);
+    }
+
+    static Node selectReferenceNode(FlowRule rule, Context context, DefaultNode node) {
+        // 获取关联的 资源id 或 上下文名称
+        String refResource = rule.getRefResource();
+        int strategy = rule.getStrategy();
+
+        // refResource 为空则直接返回
+        if (StringUtil.isEmpty(refResource)) {
+            return null;
+        }
+
+        // 若是关联限流，则返回关联资源的ClusterNode
+        if (strategy == RuleConstant.STRATEGY_RELATE) {
+            return ClusterBuilderSlot.getClusterNode(refResource);
+        }
+
+        if (strategy == RuleConstant.STRATEGY_CHAIN) {
+            // 引用的上下文 != 当前上下文
+            if (!refResource.equals(context.getName())) {
+                return null;
+            }
+            return node;
+        }
+        // No node.
+        return null;
+    }
+
+    private static boolean filterOrigin(String origin) {
+        // Origin cannot be `default` or `other`.
+        // origin 不能为系统自定义的值（default 和 other）
+        return !RuleConstant.LIMIT_APP_DEFAULT.equals(origin) && !RuleConstant.LIMIT_APP_OTHER.equals(origin);
+    }
+
+    static Node selectNodeByRequesterAndStrategy(/*@NonNull*/ FlowRule rule, Context context, DefaultNode node) {
+        // The limit app should not be empty.
+        String limitApp = rule.getLimitApp();
+        int strategy = rule.getStrategy();
+        String origin = context.getOrigin();
+
+        // 当前请求源在限流名单中 &&  origin不能为系统自定义的值（default 和 other）
+        if (limitApp.equals(origin) && filterOrigin(origin)) {
+            if (strategy == RuleConstant.STRATEGY_DIRECT) { // 基于调用链的限流策略为直接拒绝
+                // Matches limit origin, return origin statistic node.
+                // 返回当前上下文中保存的源头节点
+                return context.getOriginNode();
+            }
+
+            return selectReferenceNode(rule, context, node);
+        } else if (RuleConstant.LIMIT_APP_DEFAULT.equals(limitApp)) {
+            if (strategy == RuleConstant.STRATEGY_DIRECT) {
+                // Return the cluster node.
+                // 返回聚集节点
+                return node.getClusterNode();
+            }
+
+            return selectReferenceNode(rule, context, node);
+        } else if (RuleConstant.LIMIT_APP_OTHER.equals(limitApp)
+            && FlowRuleManager.isOtherOrigin(origin, rule.getResource())) {
+            if (strategy == RuleConstant.STRATEGY_DIRECT) {
+                return context.getOriginNode();
+            }
+
+            return selectReferenceNode(rule, context, node);
+        }
+
+        return null;
+    }
+
+    private static boolean passClusterCheck(FlowRule rule, Context context, DefaultNode node, int acquireCount,
+                                            boolean prioritized) {
+        try {
+            // 获取集群 tokenService
+            TokenService clusterService = pickClusterService();
+            if (clusterService == null) {
+                // 获取不到则降级到本地
+                return fallbackToLocalOrPass(rule, context, node, acquireCount, prioritized);
+            }
+            // 获取集群规则id（这个和数据库规则唯一id是一致的）
+            long flowId = rule.getClusterConfig().getFlowId();
+            // 通过 tokenService 去申请token
+            TokenResult result = clusterService.requestToken(flowId, acquireCount, prioritized);
+            // 获取结果
+            return applyTokenResult(result, rule, context, node, acquireCount, prioritized);
+            // If client is absent, then fallback to local mode.
+        } catch (Throwable ex) {
+            RecordLog.warn("[FlowRuleChecker] Request cluster token unexpected failed", ex);
+        }
+
+        // Fallback to local flow control when token client or server for this rule is not available.
+        // If fallback is not enabled, then directly pass.
+        // 当集群流控不可用则降级到本地流控，如果 fallback 配置没有启用，则直接通过
+        return fallbackToLocalOrPass(rule, context, node, acquireCount, prioritized);
+    }
+
+    private static boolean fallbackToLocalOrPass(FlowRule rule, Context context, DefaultNode node, int acquireCount,
+                                                 boolean prioritized) {
+        if (rule.getClusterConfig().isFallbackToLocalWhenFail()) {
+            // 降级到本地check
+            return passLocalCheck(rule, context, node, acquireCount, prioritized);
+        } else {
+            // The rule won't be activated, just pass.
+            // 规则没有启用，直接通过
+            return true;
+        }
+    }
+
+    private static TokenService pickClusterService() {
+        // 判断当前是否是客户端，如果是则返回tokenClient
+        if (ClusterStateManager.isClient()) {
+            return TokenClientProvider.getClient();
+        }
+        // 判断当前是否是服务端，如果是则返回tokenServer
+        if (ClusterStateManager.isServer()) {
+            return EmbeddedClusterTokenServerProvider.getServer();
+        }
+        return null;
+    }
+
+    private static boolean applyTokenResult(/*@NonNull*/ TokenResult result, FlowRule rule, Context context,
+                                                         DefaultNode node,
+                                                         int acquireCount, boolean prioritized) {
+        switch (result.getStatus()) {
+            case TokenResultStatus.OK:
+                return true;
+            case TokenResultStatus.SHOULD_WAIT:
+                // Wait for next tick.
+                // 等待
+                try {
+                    Thread.sleep(result.getWaitInMs());
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return true;
+            case TokenResultStatus.NO_RULE_EXISTS:
+            case TokenResultStatus.BAD_REQUEST:
+            case TokenResultStatus.FAIL:
+            case TokenResultStatus.TOO_MANY_REQUEST:
+                return fallbackToLocalOrPass(rule, context, node, acquireCount, prioritized);
+            case TokenResultStatus.BLOCKED:
+            default:
+                return false;
+        }
+    }
+}
+```
+
+#### DegradeSlot
+熔断降级插槽，该类没有什么好看的，主要功能集中在 DegardeRuleManager
+
+```java
+public class DegradeSlot extends AbstractLinkedProcessorSlot<DefaultNode> {
+
+    @Override
+    public void entry(Context context, ResourceWrapper resourceWrapper, DefaultNode node, int count, boolean prioritized, Object... args)
+        throws Throwable {
+        // 降级检查
+        DegradeRuleManager.checkDegrade(resourceWrapper, context, node, count);
+        fireEntry(context, resourceWrapper, node, count, prioritized, args);
+    }
+
+    @Override
+    public void exit(Context context, ResourceWrapper resourceWrapper, int count, Object... args) {
+        fireExit(context, resourceWrapper, count, args);
+    }
+}
+```
+
+```java
+public class DegradeRule extends AbstractRule {
+    
+     private static ScheduledExecutorService pool = Executors.newScheduledThreadPool(
+            Runtime.getRuntime().availableProcessors(), new NamedThreadFactory("sentinel-degrade-reset-task", true));
+
+    /**
+     * RT threshold or exception ratio threshold count.
+     * rt 阈值 或 异常数 阈值
+     */
+    private double count;
+
+    /**
+     * Degrade recover timeout (in seconds) when degradation occurs.
+     * 降级恢复的超时时间
+     */
+    private int timeWindow;
+
+    /**
+     * Degrade strategy (0: average RT, 1: exception ratio, 2: exception count).
+     * 降级策略：0 平均响应时间，1 异常比例，2 异常数
+     */
+    private int grade = RuleConstant.DEGRADE_GRADE_RT;
+
+    /**
+     * Minimum number of consecutive slow requests that can trigger RT circuit breaking.
+     * 可触发RT熔断的最小连续慢请求数
+     *
+     * @since 1.7.0
+     */
+    private int rtSlowRequestAmount = RuleConstant.DEGRADE_DEFAULT_SLOW_REQUEST_AMOUNT;
+
+    /**
+     * Minimum number of requests (in an active statistic time span) that can trigger circuit breaking.
+     * 可触发熔断的最小请求数（在活动统计时间范围内）
+     *
+     * @since 1.7.0
+     */
+    private int minRequestAmount = RuleConstant.DEGRADE_DEFAULT_MIN_REQUEST_AMOUNT;
+
+    // Internal implementation (will be deprecated and moved outside).
+    // 窗口内通过的请求数
+    private AtomicLong passCount = new AtomicLong(0);
+    // 熔断器开关
+    private final AtomicBoolean cut = new AtomicBoolean(false);
+
+    @Override
+    public boolean passCheck(Context context, DefaultNode node, int acquireCount, Object... args) {
+        // 熔断器打开，直接返回false，流量拒绝通过
+        if (cut.get()) {
+            return false;
+        }
+
+        // 获取集群资源统计节点
+        ClusterNode clusterNode = ClusterBuilderSlot.getClusterNode(this.getResource());
+        if (clusterNode == null) {
+            return true;
+        }
+
+        // 基于响应时间降级策略
+        if (grade == RuleConstant.DEGRADE_GRADE_RT) {
+            double rt = clusterNode.avgRt();
+            // 响应时间小于设定的阈值，通过
+            if (rt < this.count) {
+                passCount.set(0);
+                return true;
+            }
+
+            // Sentinel will degrade the service only if count exceeds.
+            // 通过的次数小于可触发熔断的连续慢请求个数，通过
+            if (passCount.incrementAndGet() < rtSlowRequestAmount) {
+                return true;
+            }
+        } else if (grade == RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO) {
+            double exception = clusterNode.exceptionQps();
+            double success = clusterNode.successQps();
+            double total = clusterNode.totalQps();
+            // If total amount is less than minRequestAmount, the request will pass.
+            // 总量小于一分钟内总的通过次数，通过
+            if (total < minRequestAmount) {
+                return true;
+            }
+
+            // In the same aligned statistic time window,
+            // "success" (aka. completed count) = exception count + non-exception count (realSuccess)
+            double realSuccess = success - exception;
+            if (realSuccess <= 0 && exception < minRequestAmount) {
+                return true;
+            }
+
+            if (exception / success < count) {
+                return true;
+            }
+        } else if (grade == RuleConstant.DEGRADE_GRADE_EXCEPTION_COUNT) {
+            double exception = clusterNode.totalException();
+            if (exception < count) {
+                return true;
+            }
+        }
+
+        // 走到这里说明有熔断规则触发，熔断开关打开
+        if (cut.compareAndSet(false, true)) {
+            // 重置 task
+            ResetTask resetTask = new ResetTask(this);
+            pool.schedule(resetTask, timeWindow, TimeUnit.SECONDS);
+        }
+
+        return false;
+    }
+
+    private static final class ResetTask implements Runnable {
+
+        private DegradeRule rule;
+
+        ResetTask(DegradeRule rule) {
+            this.rule = rule;
+        }
+
+        @Override
+        public void run() {
+            // 通过量重置为0
+            rule.passCount.set(0);
+            // 熔断开关关闭
+            rule.cut.set(false);
+        }
+    }
+}
+```
