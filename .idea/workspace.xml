@@ -3,6 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md" beforeDir="false" afterPath="$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -32,7 +33,7 @@
           <entry key="gitignore" value="1" />
           <entry key="iml" value="1" />
           <entry key="java" value="1" />
-          <entry key="md" value="23" />
+          <entry key="md" value="24" />
           <entry key="png" value="1" />
           <entry key="xml" value="4" />
         </counts>
@@ -43,33 +44,53 @@
           <entry key="IDEA_MODULE" value="1" />
           <entry key="Image" value="1" />
           <entry key="JAVA" value="1" />
-          <entry key="Markdown" value="23" />
+          <entry key="Markdown" value="24" />
           <entry key="XML" value="4" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="md" value="17595" />
-          <entry key="txt" value="79" />
+          <entry key="md" value="17658" />
+          <entry key="txt" value="82" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
           <entry key="JAVA" value="149" />
-          <entry key="Markdown" value="17446" />
-          <entry key="PLAIN_TEXT" value="79" />
+          <entry key="Markdown" value="17509" />
+          <entry key="PLAIN_TEXT" value="82" />
         </counts>
       </usages-collector>
     </session>
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md">
           <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
             <state split_layout="FIRST">
-              <first_editor relative-caret-position="200">
-                <caret line="10" lean-forward="true" selection-start-line="10" selection-end-line="10" />
+              <first_editor relative-caret-position="520">
+                <caret line="612" column="3" lean-forward="true" selection-start-line="612" selection-start-column="3" selection-end-line="612" selection-end-column="3" />
+                <folding>
+                  <element signature="e#305#306#0" expanded="true" />
+                  <element signature="e#386#387#0" expanded="true" />
+                  <element signature="e#861#862#0" expanded="true" />
+                  <element signature="e#919#920#0" expanded="true" />
+                  <element signature="e#7288#7289#0" expanded="true" />
+                  <element signature="e#7386#7387#0" expanded="true" />
+                </folding>
+              </first_editor>
+              <second_editor />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/2019年12月/MyBatis学习笔记.md">
+          <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
+            <state split_layout="SECOND">
+              <first_editor relative-caret-position="5280">
+                <caret line="376" column="31" lean-forward="true" selection-start-line="376" selection-start-column="31" selection-end-line="376" selection-end-column="31" />
               </first_editor>
               <second_editor />
             </state>
@@ -100,8 +121,8 @@
         <option value="$PROJECT_DIR$/2020年7月/sentinel学习.md" />
         <option value="$PROJECT_DIR$/2020年7月/netty学习.md" />
         <option value="$PROJECT_DIR$/2020年7月/左耳听风.md" />
-        <option value="$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md" />
         <option value="$PROJECT_DIR$/2018年8月/8.22_FastDFS搭建.md" />
+        <option value="$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md" />
       </list>
     </option>
   </component>
@@ -130,6 +151,16 @@
             <path>
               <item name="my-note" type="b2602c69:ProjectViewProjectNode" />
               <item name="my-note" type="462c0819:PsiDirectoryNode" />
+              <item name="2019年12月" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="my-note" type="b2602c69:ProjectViewProjectNode" />
+              <item name="my-note" type="462c0819:PsiDirectoryNode" />
+              <item name="2020年4月" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="my-note" type="b2602c69:ProjectViewProjectNode" />
+              <item name="my-note" type="462c0819:PsiDirectoryNode" />
               <item name="2020年7月" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
@@ -143,7 +174,7 @@
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="aspect.path.notification.shown" value="true" />
-    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1595149788983" />
+    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1595154385732" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
     <property name="project.structure.last.edited" value="Modules" />
@@ -314,7 +345,7 @@
       <workItem from="1594533775383" duration="112000" />
       <workItem from="1594539410584" duration="603000" />
       <workItem from="1594545654782" duration="4730000" />
-      <workItem from="1594565747447" duration="28320000" />
+      <workItem from="1594565747447" duration="30666000" />
     </task>
     <task id="LOCAL-00001" summary="新增图片">
       <created>1577022815959</created>
@@ -358,11 +389,18 @@
       <option name="project" value="LOCAL" />
       <updated>1595149336189</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="fix spring AOP">
+      <created>1595149866123</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1595149866123</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="79028000" />
+    <option name="totallyTimeSpent" value="81374000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="0" y="0" width="1440" height="900" extended-state="0" />
@@ -412,7 +450,8 @@
     <MESSAGE value="add" />
     <MESSAGE value="add netty学习&amp;左耳听风" />
     <MESSAGE value="add spring AOP" />
-    <option name="LAST_COMMIT_MESSAGE" value="add spring AOP" />
+    <MESSAGE value="fix spring AOP" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix spring AOP" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/2018年12月/12.18_kafka原理及应用.md">
@@ -593,21 +632,29 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/2019年12月/MyBatis学习笔记.md">
+    <entry file="file://$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md">
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
         <state split_layout="FIRST">
-          <first_editor relative-caret-position="3694">
-            <caret line="376" column="31" lean-forward="true" selection-start-line="376" selection-start-column="31" selection-end-line="376" selection-end-column="31" />
+          <first_editor relative-caret-position="520">
+            <caret line="612" column="3" lean-forward="true" selection-start-line="612" selection-start-column="3" selection-end-line="612" selection-end-column="3" />
+            <folding>
+              <element signature="e#305#306#0" expanded="true" />
+              <element signature="e#386#387#0" expanded="true" />
+              <element signature="e#861#862#0" expanded="true" />
+              <element signature="e#919#920#0" expanded="true" />
+              <element signature="e#7288#7289#0" expanded="true" />
+              <element signature="e#7386#7387#0" expanded="true" />
+            </folding>
           </first_editor>
           <second_editor />
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md">
+    <entry file="file://$PROJECT_DIR$/2019年12月/MyBatis学习笔记.md">
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
-        <state split_layout="FIRST">
-          <first_editor relative-caret-position="200">
-            <caret line="10" lean-forward="true" selection-start-line="10" selection-end-line="10" />
+        <state split_layout="SECOND">
+          <first_editor relative-caret-position="5280">
+            <caret line="376" column="31" lean-forward="true" selection-start-line="376" selection-start-column="31" selection-end-line="376" selection-end-column="31" />
           </first_editor>
           <second_editor />
         </state>
