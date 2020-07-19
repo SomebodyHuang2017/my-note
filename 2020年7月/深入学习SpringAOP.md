@@ -103,7 +103,7 @@ public class DefaultAdvisorChainFactory implements AdvisorChainFactory, Serializ
 				// 有条件的添加
 				PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
 				if (config.isPreFiltered() || pointcutAdvisor.getPointcut().getClassFilter().matches(actualClass)) {
-				    // 从注册器中获取拦截器，可以获取到默认的三个拦截器：MethodBeforeAdviceAdapter、AfterReturningAdviceAdapter、ThrowsAdviceAdapter
+				    // 从注册器中获取拦截器
 				    MethodInterceptor[] interceptors = registry.getInterceptors(advisor);
 					MethodMatcher mm = pointcutAdvisor.getPointcut().getMethodMatcher();
 					// 匹配当前方法是否符合切入点
