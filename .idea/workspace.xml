@@ -5,12 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/2020年8月/pic/JMM.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/2020年8月/pic/Java-Thraed-Life-Cycle-States.jpg" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/2020年8月/pic/skip-list.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/2020年8月/pic/thread-live.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/2020年8月/基础知识的学习.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/2020年8月/基础知识的学习.md" beforeDir="false" afterPath="$PROJECT_DIR$/2020年8月/基础知识的学习.md" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -22,9 +18,9 @@
     <session id="-2083960634">
       <usages-collector id="statistics.lifecycle.project">
         <counts>
-          <entry key="project.closed" value="16" />
+          <entry key="project.closed" value="17" />
           <entry key="project.open.time.0" value="3" />
-          <entry key="project.open.time.1" value="5" />
+          <entry key="project.open.time.1" value="6" />
           <entry key="project.open.time.12" value="1" />
           <entry key="project.open.time.14" value="1" />
           <entry key="project.open.time.2" value="1" />
@@ -33,7 +29,7 @@
           <entry key="project.open.time.7" value="2" />
           <entry key="project.open.time.8" value="1" />
           <entry key="project.open.time.9" value="1" />
-          <entry key="project.opened" value="17" />
+          <entry key="project.opened" value="18" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.open">
@@ -58,14 +54,14 @@
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="md" value="18824" />
+          <entry key="md" value="20954" />
           <entry key="txt" value="86" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
           <entry key="JAVA" value="150" />
-          <entry key="Markdown" value="18674" />
+          <entry key="Markdown" value="20804" />
           <entry key="PLAIN_TEXT" value="86" />
         </counts>
       </usages-collector>
@@ -77,8 +73,8 @@
         <entry file="file://$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md">
           <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
             <state split_layout="FIRST">
-              <first_editor relative-caret-position="11360">
-                <caret line="572" column="9" lean-forward="true" selection-start-line="572" selection-start-column="9" selection-end-line="572" selection-end-column="9" />
+              <first_editor relative-caret-position="11440">
+                <caret line="572" column="9" selection-start-line="572" selection-start-column="9" selection-end-line="572" selection-end-column="9" />
               </first_editor>
               <second_editor />
             </state>
@@ -89,8 +85,8 @@
         <entry file="file://$PROJECT_DIR$/2020年8月/基础知识的学习.md">
           <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
             <state split_layout="FIRST">
-              <first_editor relative-caret-position="680">
-                <caret line="80" lean-forward="true" selection-start-line="80" selection-end-line="80" />
+              <first_editor relative-caret-position="100">
+                <caret line="176" column="60" lean-forward="true" selection-start-line="176" selection-start-column="60" selection-end-line="176" selection-end-column="60" />
               </first_editor>
               <second_editor />
             </state>
@@ -143,7 +139,6 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
-      <pane id="Scope" />
       <pane id="PackagesPane" />
       <pane id="ProjectPane">
         <subPane>
@@ -177,12 +172,13 @@
           <select />
         </subPane>
       </pane>
+      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="aspect.path.notification.shown" value="true" />
-    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1597507952924" />
+    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1597557266622" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
     <property name="project.structure.last.edited" value="Modules" />
@@ -242,7 +238,8 @@
       <workItem from="1594539410584" duration="603000" />
       <workItem from="1594545654782" duration="4730000" />
       <workItem from="1594565747447" duration="33505000" />
-      <workItem from="1596893472476" duration="6955000" />
+      <workItem from="1596893472476" duration="9172000" />
+      <workItem from="1597560998724" duration="4928000" />
     </task>
     <task id="LOCAL-00001" summary="新增图片">
       <created>1577022815959</created>
@@ -314,17 +311,24 @@
       <option name="project" value="LOCAL" />
       <updated>1596962542738</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary=".">
+      <created>1597507968992</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1597507968992</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="91168000" />
+    <option name="totallyTimeSpent" value="98313000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="0" y="0" width="1440" height="900" extended-state="0" />
     <editor active="true" />
     <layout>
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.20529328" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.2081545" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Image Layers" order="2" />
       <window_info id="Designer" order="3" />
@@ -561,14 +565,12 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/2020年8月/pic/thread.png">
-      <provider selected="true" editor-type-id="images" />
-    </entry>
+    <entry file="file://$PROJECT_DIR$/2020年8月/pic/thread.png" />
     <entry file="file://$PROJECT_DIR$/2020年7月/深入学习SpringAOP.md">
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
         <state split_layout="FIRST">
-          <first_editor relative-caret-position="11360">
-            <caret line="572" column="9" lean-forward="true" selection-start-line="572" selection-start-column="9" selection-end-line="572" selection-end-column="9" />
+          <first_editor relative-caret-position="11440">
+            <caret line="572" column="9" selection-start-line="572" selection-start-column="9" selection-end-line="572" selection-end-column="9" />
           </first_editor>
           <second_editor />
         </state>
@@ -577,8 +579,8 @@
     <entry file="file://$PROJECT_DIR$/2020年8月/基础知识的学习.md">
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
         <state split_layout="FIRST">
-          <first_editor relative-caret-position="680">
-            <caret line="80" lean-forward="true" selection-start-line="80" selection-end-line="80" />
+          <first_editor relative-caret-position="100">
+            <caret line="176" column="60" lean-forward="true" selection-start-line="176" selection-start-column="60" selection-end-line="176" selection-end-column="60" />
           </first_editor>
           <second_editor />
         </state>
