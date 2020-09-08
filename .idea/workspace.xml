@@ -3,7 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/2020年9月/高可用保障.md" beforeDir="false" afterPath="$PROJECT_DIR$/2020年9月/高可用保障.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/2020年9月/高可用保障之限流.md" beforeDir="false" afterPath="$PROJECT_DIR$/2020年9月/高可用保障之限流.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -99,7 +99,7 @@
       <workItem from="1598775759866" duration="8013000" />
       <workItem from="1598883979531" duration="18120000" />
       <workItem from="1599537553516" duration="30000" />
-      <workItem from="1599554046669" duration="518000" />
+      <workItem from="1599554046669" duration="2044000" />
     </task>
     <task id="LOCAL-00001" summary="新增图片">
       <created>1577022815959</created>
@@ -220,7 +220,14 @@
       <option name="project" value="LOCAL" />
       <updated>1599408783365</updated>
     </task>
-    <option name="localTasksCounter" value="18" />
+    <task id="LOCAL-00018" summary=".">
+      <created>1599556402024</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1599556402024</updated>
+    </task>
+    <option name="localTasksCounter" value="19" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -238,6 +245,20 @@
     <MESSAGE value="fix spring AOP" />
     <MESSAGE value="." />
     <option name="LAST_COMMIT_MESSAGE" value="." />
+  </component>
+  <component name="WindowStateProjectService">
+    <state x="297" y="26" key="CommitChangelistDialog2" timestamp="1599556401192">
+      <screen x="0" y="0" width="1440" height="900" />
+    </state>
+    <state x="297" y="26" key="CommitChangelistDialog2/0.0.1440.900@0.0.1440.900" timestamp="1599556401192" />
+    <state x="320" y="190" key="Vcs.Push.Dialog.v2" timestamp="1599556403940">
+      <screen x="0" y="0" width="1440" height="900" />
+    </state>
+    <state x="320" y="190" key="Vcs.Push.Dialog.v2/0.0.1440.900@0.0.1440.900" timestamp="1599556403940" />
+    <state x="518" y="371" key="com.intellij.openapi.vcs.update.UpdateOrStatusOptionsDialogupdate-v2" timestamp="1599556681319">
+      <screen x="0" y="0" width="1440" height="900" />
+    </state>
+    <state x="518" y="371" key="com.intellij.openapi.vcs.update.UpdateOrStatusOptionsDialogupdate-v2/0.0.1440.900@0.0.1440.900" timestamp="1599556681319" />
   </component>
   <component name="masterDetails">
     <states>
