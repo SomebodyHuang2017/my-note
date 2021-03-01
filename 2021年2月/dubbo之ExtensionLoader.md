@@ -8,6 +8,7 @@ ExtensionLoader使用起来比较简单：
 第二部：通过ExtensionLoader的getExtension方法获取到具体的组件。
 
 示例如下：
+
 ```java
 class ExtensionLoaderDemo {
     
@@ -45,6 +46,7 @@ ExtensionLoader创建比较简单，就是一个方法getExtensionLoader，传�
 3. 必须保证该接口类型上加上了@SPI注解
 
 校验过后，首先从map中获取ExtensionLoader，如果不存在的话则new一个新的ExtensionLoader，放到map中缓存起来，再返回。
+
 ```java
 public class ExtensionLoader<T> {
   public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
@@ -84,3 +86,177 @@ public class ExtensionLoader<T> {
 从这里可以知道，ExtensionFactory也是通过ExtensionLoader去加载的，那么下面就继续走向扩展加载的第二步。
 
 ## Extension 的加载
+
+extension的加载主要有三个核心方法：
+1. getExtension：根据名称获取当前扩展的指定实现
+2. getAdaptiveExtension：获取当前扩展的自适应实现
+3. getActivateExtension：根据条件获取当前扩展可自动激活的实现
+
+### getExtension 根据名称获取当前扩展的指定实现
+
+```java
+public class ExtensionLoader<T> {
+    
+    public T getExtension(String name) {
+        return getExtension(name, true);
+    }
+
+    public T getExtension(String name, boolean wrap) {
+        if (StringUtils.isEmpty(name)) {
+            throw new IllegalArgumentException("Extension name == null");
+        }
+        if ("true".equals(name)) {
+            return getDefaultExtension();
+        }
+        final Holder<Object> holder = getOrCreateHolder(name);
+        Object instance = holder.get();
+        if (instance == null) {
+            synchronized (holder) {
+                instance = holder.get();
+                if (instance == null) {
+                    instance = createExtension(name, wrap);
+                    holder.set(instance);
+                }
+            }
+        }
+        return (T) instance;
+    }
+
+    private Holder<Object> getOrCreateHolder(String name) {
+        Holder<Object> holder = cachedInstances.get(name);
+        if (holder == null) {
+            cachedInstances.putIfAbsent(name, new Holder<>());
+            holder = cachedInstances.get(name);
+        }
+        return holder;
+    }
+
+    private Map<String, Class<?>> getExtensionClasses() {
+        Map<String, Class<?>> classes = cachedClasses.get();
+        if (classes == null) {
+            synchronized (cachedClasses) {
+                classes = cachedClasses.get();
+                if (classes == null) {
+                    // 加载扩展类
+                    classes = loadExtensionClasses();
+                    cachedClasses.set(classes);
+                }
+            }
+        }
+        return classes;
+    }
+    
+    private T createExtension(String name, boolean wrap) {
+        // 加载并获取扩展类
+        Class<?> clazz = getExtensionClasses().get(name);
+        if (clazz == null) {
+            throw findException(name);
+        }
+        try {
+            T instance = (T) EXTENSION_INSTANCES.get(clazz);
+            if (instance == null) {
+                // 创建扩展对象并放到缓存中
+                EXTENSION_INSTANCES.putIfAbsent(clazz, clazz.newInstance());
+                instance = (T) EXTENSION_INSTANCES.get(clazz);
+            }
+            // 注入扩展字段
+            injectExtension(instance);
+
+
+            if (wrap) {
+
+                List<Class<?>> wrapperClassesList = new ArrayList<>();
+                if (cachedWrapperClasses != null) {
+                    wrapperClassesList.addAll(cachedWrapperClasses);
+                    wrapperClassesList.sort(WrapperComparator.COMPARATOR);
+                    Collections.reverse(wrapperClassesList);
+                }
+
+                if (CollectionUtils.isNotEmpty(wrapperClassesList)) {
+                    for (Class<?> wrapperClass : wrapperClassesList) {
+                        Wrapper wrapper = wrapperClass.getAnnotation(Wrapper.class);
+                        if (wrapper == null
+                                || (ArrayUtils.contains(wrapper.matches(), name) && !ArrayUtils.contains(wrapper.mismatches(), name))) {
+                            instance = injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance));
+                        }
+                    }
+                }
+            }
+
+            // 初始化扩展
+            initExtension(instance);
+            return instance;
+        } catch (Throwable t) {
+            throw new IllegalStateException("Extension instance (name: " + name + ", class: " +
+                    type + ") couldn't be instantiated: " + t.getMessage(), t);
+        }
+    }
+}
+```
+
+首先从缓存中获取实例对象，如果获取不到的话再进行创建。 创建的第一步是加载扩展类，这里类似于java的SPI，它遍历所有jar包，找到特定目录里面的接口名方法的文件，
+读取之后通过类加载器加载class，所有的class被加载后通过扩展名获取对应的扩展器。
+
+通过反射创建对象放到缓存中，并对属性进行注入。如果需要的话对其包裹类进行包装，并完成排序，注入等逻辑。
+最后如果扩展实例对象实现了Lifecycle接口，则进行初始化。
+
+### getAdaptiveExtension 获取当前扩展的自适应实现
+
+```java
+public class ExtensionLoader<T> {
+    public T getAdaptiveExtension() {
+        Object instance = cachedAdaptiveInstance.get();
+        if (instance == null) {
+            if (createAdaptiveInstanceError != null) {
+                throw new IllegalStateException("Failed to create adaptive instance: " +
+                        createAdaptiveInstanceError.toString(),
+                        createAdaptiveInstanceError);
+            }
+
+            synchronized (cachedAdaptiveInstance) {
+                instance = cachedAdaptiveInstance.get();
+                if (instance == null) {
+                    try {
+                        // 创建自适应扩展
+                        instance = createAdaptiveExtension();
+                        cachedAdaptiveInstance.set(instance);
+                    } catch (Throwable t) {
+                        createAdaptiveInstanceError = t;
+                        throw new IllegalStateException("Failed to create adaptive instance: " + t.toString(), t);
+                    }
+                }
+            }
+        }
+
+        return (T) instance;
+    }
+
+    @SuppressWarnings("unchecked")
+    private T createAdaptiveExtension() {
+        try {
+            // 获取自适应扩展 -> 反射创建对象 -> 注入扩展的字段
+            return injectExtension((T) getAdaptiveExtensionClass().newInstance());
+        } catch (Exception e) {
+            throw new IllegalStateException("Can't create adaptive extension " + type + ", cause: " + e.getMessage(), e);
+        }
+    }
+
+    private Class<?> getAdaptiveExtensionClass() {
+        getExtensionClasses();
+        if (cachedAdaptiveClass != null) {
+            return cachedAdaptiveClass;
+        }
+        return cachedAdaptiveClass = createAdaptiveExtensionClass();
+    }
+
+    private Class<?> createAdaptiveExtensionClass() {
+        String code = new AdaptiveClassCodeGenerator(type, cachedDefaultName).generate();
+        ClassLoader classLoader = findClassLoader();
+        org.apache.dubbo.common.compiler.Compiler compiler = ExtensionLoader.getExtensionLoader(org.apache.dubbo.common.compiler.Compiler.class).getAdaptiveExtension();
+        return compiler.compile(code, classLoader);
+    }
+}
+```
+
+### getActivateExtension 根据条件获取当前扩展可自动激活的实现
+
