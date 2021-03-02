@@ -29,7 +29,7 @@ class ExtensionLoaderDemo {
 * **ExtensionFactory**：接口，扩展组件的工厂接口
 * **LoadingStrategy**：接口，描述的是加载策略，有三个实现类。DubboInternalLoadingStrategy（加载dubbo内部组件）、DubboLoadingStrategy（加载由用户自定义的dubbo组件）、ServicesLoadingStrategy（加载java SPI目录下配置的组件）
 * **SPI**：注解，用在扩展点的接口上，标识后可被dubbo加载
-* **Adaptive**：注解，为ExtensionLoader注入依赖扩展实例提供有用的信息
+* **Adaptive**：注解，可以用在类或者接口的方法上，为ExtensionLoader注入依赖扩展实例提供有用的信息，自适应用扩展类
 * **Activate**：注解，给定特定的条件后可以自动激活组件，如果有多个实现，可以选择加载某些组件
 * **Wrapper**：注解，带有该主机的类仅在条件匹配时作为包装器工作
 
@@ -202,6 +202,15 @@ public class ExtensionLoader<T> {
 
 ### getAdaptiveExtension 获取当前扩展的自适应实现
 
+首先提出几个问题？
+
+1. 什么是自适应扩展？
+   自适应扩展基于代理类，本质是可以做到一个SPI中的不同的Adaptive方法可以去调不同的SPI实现类去处理。使得程序的灵活性大大提高。这是整套SPI设计的一个精华之所在。
+2. 自适应扩展能解决什么问题？
+   拓展可以不在框架启动阶段被加载，而是希望在拓展方法被调用时，根据运行时参数进行加载。
+3. 自适应扩展功能是如何实现的？
+   基于代理类，通过getAdaptiveExtension方法获取的不是真正的实现类，而是一个代理类。在代理类的代理方法中完成获取实现类逻辑。
+
 ```java
 public class ExtensionLoader<T> {
     public T getAdaptiveExtension() {
@@ -242,18 +251,139 @@ public class ExtensionLoader<T> {
     }
 
     private Class<?> getAdaptiveExtensionClass() {
+        // 注意，在加载扩展类的时候会判断是否有类标记上了@Adaptive注解，只能有一个被标记，多了则抛异常。
+        // 如果有类被标记了@Adaptive，那么cachedAdaptiveClass就会被赋上值。
         getExtensionClasses();
         if (cachedAdaptiveClass != null) {
             return cachedAdaptiveClass;
         }
+        // 如果没有类被标记，那么就会自动创建一个自适应扩展类
         return cachedAdaptiveClass = createAdaptiveExtensionClass();
     }
 
     private Class<?> createAdaptiveExtensionClass() {
+        // 根据接口声明生成自适应扩展类代码
         String code = new AdaptiveClassCodeGenerator(type, cachedDefaultName).generate();
+        // 找到类加载器
         ClassLoader classLoader = findClassLoader();
+        // 通过ExtensionLoader加载编译器，默认是javaassit编译器
         org.apache.dubbo.common.compiler.Compiler compiler = ExtensionLoader.getExtensionLoader(org.apache.dubbo.common.compiler.Compiler.class).getAdaptiveExtension();
+        // 将代码文件编译成类
         return compiler.compile(code, classLoader);
+    }
+}
+```
+
+自适应扩展首先是从缓存中获取，如果获取不到则进行创建。
+创建有三步：
+1. 获取自适应扩展类
+    + spi机制获取类对象
+    + 如果没有找到自适应扩展类那么就自动生成一个
+2. 反射创建对象
+3. 注入扩展字段
+
+
+例如以下接口：
+ProxyFactory 的方法都被标记了@Adaptive那么这个接口就是自适应扩展接口。
+
+```java
+/**
+ * ProxyFactory. (API/SPI, Singleton, ThreadSafe)
+ */
+@SPI("javassist")
+public interface ProxyFactory {
+
+    /**
+     * create proxy.
+     *
+     * @param invoker
+     * @return proxy
+     */
+    @Adaptive({PROXY_KEY})
+    <T> T getProxy(Invoker<T> invoker) throws RpcException;
+
+    /**
+     * create proxy.
+     *
+     * @param invoker
+     * @return proxy
+     */
+    @Adaptive({PROXY_KEY})
+    <T> T getProxy(Invoker<T> invoker, boolean generic) throws RpcException;
+
+    /**
+     * create invoker.
+     *
+     * @param <T>
+     * @param proxy
+     * @param type
+     * @param url
+     * @return invoker
+     */
+    @Adaptive({PROXY_KEY})
+    <T> Invoker<T> getInvoker(T proxy, Class<T> type, URL url) throws RpcException;
+
+}
+
+/**
+ * 使用
+ */
+public class ServiceConfig<T> extends ServiceConfigBase<T> {
+    /**
+     * A {@link ProxyFactory} implementation that will generate a exported service proxy,the JavassistProxyFactory is its
+     * default implementation
+     * 
+     * 这里获取到的不是具体的实现类，而是是自适应扩展类（包装类），具体选择哪个扩展实现类是根据参数来的
+     */
+    private static final ProxyFactory PROXY_FACTORY = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getAdaptiveExtension();
+
+    private void doExportUrlsFor1Protocol(ProtocolConfig protocolConfig, List<URL> registryURLs) {
+        // 例如在这里获取ProxyFactory的invoker，就是根据url参数来的
+        Invoker<?> invoker = PROXY_FACTORY.getInvoker(ref, (Class) interfaceClass, url);
+    }
+}
+
+/**
+ * AdaptiveClassCodeGenerator自动生成的代码 
+ */
+public class ProxyFactory$Adaptive implements org.apache.dubbo.rpc.ProxyFactory {
+    public java.lang.Object getProxy(org.apache.dubbo.rpc.Invoker arg0) throws org.apache.dubbo.rpc.RpcException {
+        // 校验逻辑
+        if (arg0 == null) throw new IllegalArgumentException("org.apache.dubbo.rpc.Invoker argument == null");
+        if (arg0.getUrl() == null)
+            throw new IllegalArgumentException("org.apache.dubbo.rpc.Invoker argument getUrl() == null");
+        // 获取url参数
+        org.apache.dubbo.common.URL url = arg0.getUrl();
+        // 从url参数获取扩展名称，key为proxy，默认值是javaassist
+        String extName = url.getParameter("proxy", "javassist");
+        if (extName == null)
+            throw new IllegalStateException("Failed to get extension (org.apache.dubbo.rpc.ProxyFactory) name from url (" + url.toString() + ") use keys([proxy])");
+        // 获取扩展
+        org.apache.dubbo.rpc.ProxyFactory extension = (org.apache.dubbo.rpc.ProxyFactory) ExtensionLoader.getExtensionLoader(org.apache.dubbo.rpc.ProxyFactory.class).getExtension(extName);
+        // 调用具体的代理方法
+        return extension.getProxy(arg0);
+    }
+
+    public java.lang.Object getProxy(org.apache.dubbo.rpc.Invoker arg0, boolean arg1) throws org.apache.dubbo.rpc.RpcException {
+        if (arg0 == null) throw new IllegalArgumentException("org.apache.dubbo.rpc.Invoker argument == null");
+        if (arg0.getUrl() == null)
+            throw new IllegalArgumentException("org.apache.dubbo.rpc.Invoker argument getUrl() == null");
+        org.apache.dubbo.common.URL url = arg0.getUrl();
+        String extName = url.getParameter("proxy", "javassist");
+        if (extName == null)
+            throw new IllegalStateException("Failed to get extension (org.apache.dubbo.rpc.ProxyFactory) name from url (" + url.toString() + ") use keys([proxy])");
+        org.apache.dubbo.rpc.ProxyFactory extension = (org.apache.dubbo.rpc.ProxyFactory) ExtensionLoader.getExtensionLoader(org.apache.dubbo.rpc.ProxyFactory.class).getExtension(extName);
+        return extension.getProxy(arg0, arg1);
+    }
+
+    public org.apache.dubbo.rpc.Invoker getInvoker(java.lang.Object arg0, java.lang.Class arg1, org.apache.dubbo.common.URL arg2) throws org.apache.dubbo.rpc.RpcException {
+        if (arg2 == null) throw new IllegalArgumentException("url == null");
+        org.apache.dubbo.common.URL url = arg2;
+        String extName = url.getParameter("proxy", "javassist");
+        if (extName == null)
+            throw new IllegalStateException("Failed to get extension (org.apache.dubbo.rpc.ProxyFactory) name from url (" + url.toString() + ") use keys([proxy])");
+        org.apache.dubbo.rpc.ProxyFactory extension = (org.apache.dubbo.rpc.ProxyFactory) ExtensionLoader.getExtensionLoader(org.apache.dubbo.rpc.ProxyFactory.class).getExtension(extName);
+        return extension.getInvoker(arg0, arg1, arg2);
     }
 }
 ```
