@@ -99,3 +99,28 @@ docker tag 860c279d2fec runoob/centos:dev # 设置镜像标签
 Dockerfile 是一个用来构建镜像的文本文件，文本内容包含了一条条构建镜像所需的指令和说明。
 
 > https://www.runoob.com/docker/docker-dockerfile.html
+
+### Dockerfile 指令
+
++ **FROM** 指定基础镜像
++ **RUN** RUN指令将在当前镜像顶部的新层中执行任何命令，并提交结果
++ **CMD** CMD的主要目的是为执行中的容器提供默认值
++ **LABEL** LABEL指令将元数据添加到图像
++ **EXPOSE** EXPOSE指令通知Docker容器在运行时监听指定的网络端口
++ **ENV** ENV指令将环境变量<key>设置为值<value>
++ **ADD** ADD指令从<src>复制新文件，目录或远程文件URL，并将它们添加到映像的文件系统中的路径<dest>
++ **COPY** COPY指令从<src>复制新文件或目录，并将它们添加到容器的文件系统中，路径为<dest>
++ **ENTRYPOINT** 格式和 RUN 指令格式一样，目的和 CMD 一样，都是在指定容器启动程序及参数
++ **VOLUME** VOLUME指令创建具有指定名称的安装点，并将其标记为保存来自本机主机或其他容器的外部安装的卷
++ **USER** USER指令设置运行映像时要使用的用户名（或UID）以及可选的用户组（或GID），以及Dockerfile中跟随该映像的所有RUN，CMD和ENTRYPOINT指令
++ **WORKDIR** WORKDIR指令为Dockerfile中跟随它的所有RUN，CMD，ENTRYPOINT，COPY和ADD指令设置工作目录
++ **ARG** ARG指令定义了一个变量，用户可以在构建时使用--build-arg <varname> = <value>标志使用docker build命令将其传递给构建器
++ **ONBUILD** 当映像用作另一个构建的基础时，ONBUILD指令会在映像中添加一条触发指令，以便稍后执行
++ **STOPSIGNAL** STOPSIGNAL指令设置将被发送到容器退出的系统调用信号
++ **HEALTHCHECK** HEALTHCHECK指令告诉Docker如何测试容器以检查其是否仍在工作
++ **SHELL** SHELL指令允许覆盖用于命令的shell形式的默认shell
+
+> [docker---Dockerfile编写](https://www.cnblogs.com/zpcoding/p/11450686.html)
+
+> [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#from)
+
