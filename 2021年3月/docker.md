@@ -124,3 +124,20 @@ Dockerfile 是一个用来构建镜像的文本文件，文本内容包含了一
 
 > [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#from)
 
+## Docker 私有仓库搭建
+### 前提
+本地有个docker环境
+### 搭建过程
+* 1、拉取 `docker镜像仓库` 镜像：`docker pull registry`
+* 2、创建容器并映射端口：`docker run -d -p 5000:5000 -v /tmp/data/registry:/tmp/registry --name registry registry` （其中，-v /tmp/data/registry表示挂载该路径到 /tmp/registry）
+
+好了，私有仓库就搭建好了，可以通过 http://localhost:5000/v2/_catalog 访问仓库啦。
+
+### 上传镜像到私有仓库
+示例：
+* 拉取镜像：`docker pull busybox`
+* 修改镜像tag：`docker tag busybox 127.0.0.1:5000/busybox`
+* 上传到私有仓库：`docker push 127.0.0.1:5000/busybox`
+* 下载镜像：`docker pull 127.0.0.1:5000/nginx:latest`
+
+> [Docker 仓库](https://www.jianshu.com/p/e97393e5ea32)
