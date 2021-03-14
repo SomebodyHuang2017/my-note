@@ -389,4 +389,5 @@ public class ProxyFactory$Adaptive implements org.apache.dubbo.rpc.ProxyFactory 
 ```
 
 ### getActivateExtension 根据条件获取当前扩展可自动激活的实现
+Activate：可以被框架中自动激活加载扩展，此Annotation用于配置扩展被自动激活加载条件。
 
