@@ -5,7 +5,7 @@ kubectl作为一个客户端，是可以连接任意的k8s集群的。
 这是一种引用配置文件的通用方式，并不意味着存在一个名为 `kubeconfig` 的文件。
 
 ## 当前环境和背景
-本地启动了一个minikube，腾讯云也有一个TKE，安装minikube后kubectl默认是连接本地的minikube，现在想连接腾云云的k8s怎么搞？
+本地启动了一个minikube，腾讯云也有一个TKE，安装minikube后kubectl默认是连接本地的minikube，现在想连接腾讯云的k8s怎么搞？
 
 
 ## 前情概要
