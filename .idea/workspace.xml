@@ -2,11 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/2021年3月/k8s之创建私钥拉取私服镜像.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/2021年3月/云原生相关的一周工作总结.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/2021年3月/k8s配置多集群访问.md" beforeDir="false" afterPath="$PROJECT_DIR$/2021年3月/k8s配置多集群访问.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/2021年3月/kubernetes学习.md" beforeDir="false" afterPath="$PROJECT_DIR$/2021年3月/kubernetes学习.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -279,7 +275,14 @@
       <option name="project" value="LOCAL" />
       <updated>1615289795922</updated>
     </task>
-    <option name="localTasksCounter" value="25" />
+    <task id="LOCAL-00025" summary=".">
+      <created>1615799195522</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1615799195522</updated>
+    </task>
+    <option name="localTasksCounter" value="26" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
