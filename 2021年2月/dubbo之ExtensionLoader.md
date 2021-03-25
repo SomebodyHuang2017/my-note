@@ -5,7 +5,7 @@ dubbo具有很强的扩展性，看过dubbo的架构设计图就知道，它的�
 ## 如何使用ExtensionLoader
 ExtensionLoader使用起来比较简单：
 第一步：通过ExtensionLoader的getExtensionLoader方法来创建或获取一个ExtensionLoader实例。
-第二部：通过ExtensionLoader的getExtension方法获取到具体的组件。
+第二步：通过ExtensionLoader的getExtension方法获取到具体的组件。
 
 示例如下：
 
