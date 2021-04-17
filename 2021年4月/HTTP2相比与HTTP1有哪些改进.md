@@ -1,3 +1,9 @@
+GET https://baidu.com 1.1
+Content-Type
+Content-Length
+
+body
+
 * HTTP/1.1 存在性能问题
 * 兼容 1.1
 * 头部压缩：静态编码、动态编码、Haffman编码
