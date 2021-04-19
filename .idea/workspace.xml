@@ -15,10 +15,8 @@
     <bookmark url="file://$USER_HOME$/Downloads/rhino/rhino-hystrix/src/main/java/com/dianping/rhino/hystrix/HystrixEventDispatcher.java" description="CircuitBreakerEventType rhinoEventType = null;" line="31" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment=".">
-      <change afterPath="$PROJECT_DIR$/2021年4月/缓存淘汰算法.md" afterDir="false" />
+    <list default="true" id="93506e27-8a0c-43ae-9b8f-440257353535" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/2021年4月/HTTP2相比与HTTP1有哪些改进.md" beforeDir="false" afterPath="$PROJECT_DIR$/2021年4月/HTTP2相比与HTTP1有哪些改进.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -395,7 +393,14 @@
       <option name="project" value="LOCAL" />
       <updated>1616940350633</updated>
     </task>
-    <option name="localTasksCounter" value="29" />
+    <task id="LOCAL-00029" summary=".">
+      <created>1618656658721</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1618656658721</updated>
+    </task>
+    <option name="localTasksCounter" value="30" />
     <servers />
   </component>
   <component name="TimeTrackingManager">
